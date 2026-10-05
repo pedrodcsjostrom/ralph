@@ -239,12 +239,14 @@ def _setup(args: argparse.Namespace, console: Console) -> int:
     require_tools(checkout, tracker)
     root = Checkout.at(os.path.abspath(args.directory)).root
     clone = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    version, changes = setup.setup(root, clone, Tracker(root, console.progress))
-    if changes:
-        console.say(f"set up {root} for ralph {version}:\n" + "\n".join("  " + c for c in changes))
-        console.say("review and commit the changes, then split a spec with `./ralph split <spec>`")
+    outcome = setup.setup(root, clone, Tracker(root, console.progress))
+    for note in outcome.notes:
+        console.say(note)
+    if outcome.changes:
+        console.say(f"set up {root} for ralph {outcome.version}:\n" + "\n".join("  " + c for c in outcome.changes))
+        console.say("review and commit the changes, then split a spec into tickets with `./ralph split <spec>`")
     else:
-        console.say(f"{root} is already set up for ralph {version}; nothing changed")
+        console.say(f"{root} is already set up for ralph {outcome.version}; nothing changed")
     return 0
 
 

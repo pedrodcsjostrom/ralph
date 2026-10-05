@@ -151,3 +151,183 @@ class Setup(ScenarioTestCase):
         self.assertIn("ready-for-agent", s.labels())
         self.assertEqual(s.events(), ["label ready-for-agent"])
         self.assertIn(f"  created the ready-for-agent label on {REPO}\n", result.output)
+
+    def test_setup_writes_short_issue_tracker_instructions_for_github(self):
+        s = self.scenario()
+        s.release()
+
+        self.assertEqual(s.setup().status, 0)
+
+        instructions = s.read("docs/agents/issue-tracker.md")
+        self.assertIn("# Issue tracker: GitHub", instructions)
+        self.assertIn("`ready-for-agent`", instructions)
+        self.assertIn("sub_issues", instructions)
+        self.assertIn("dependencies/blocked_by", instructions)
+        self.assertLessEqual(len(instructions.splitlines()), 40)
+
+    def test_setup_adds_a_short_section_pointing_at_help_to_a_new_claude_md(self):
+        s = self.scenario()
+        s.release()
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 0, result.output)
+        section = self.ralph_section(s.read("CLAUDE.md"))
+        self.assertIn("`./ralph help`", section)
+        self.assertIn("docs/agents/issue-tracker.md", section)
+        self.assertLessEqual(len(section.splitlines()), 12)
+        self.assertFalse(os.path.exists(os.path.join(s.work, "AGENTS.md")))
+
+    def test_setup_adds_the_section_to_the_end_of_existing_agent_instructions(self):
+        s = self.scenario()
+        s.release()
+        s.commit_file("AGENTS.md", "# Widgets\n\nSort widgets carefully.\n", "Agent instructions")
+
+        self.assertEqual(s.setup().status, 0)
+
+        instructions = s.read("AGENTS.md")
+        self.assertTrue(instructions.startswith("# Widgets\n\nSort widgets carefully.\n\n<!-- ralph"), instructions)
+        self.assertIn("`./ralph help`", self.ralph_section(instructions))
+        self.assertFalse(os.path.exists(os.path.join(s.work, "CLAUDE.md")))
+
+    def test_claude_md_gets_the_section_when_both_instruction_files_exist(self):
+        s = self.scenario()
+        s.release()
+        s.commit_file("AGENTS.md", "# For agents\n", "Agent instructions")
+        s.commit_file("CLAUDE.md", "# For Claude\n", "Claude instructions")
+
+        self.assertEqual(s.setup().status, 0)
+
+        self.assertEqual(s.read("AGENTS.md"), "# For agents\n")
+        self.assertIn("`./ralph help`", self.ralph_section(s.read("CLAUDE.md")))
+
+    def test_a_claude_md_linked_to_agents_md_stays_a_link(self):
+        s = self.scenario()
+        s.release()
+        s.commit_file("AGENTS.md", "# Widgets\n", "Agent instructions")
+        os.symlink("AGENTS.md", os.path.join(s.work, "CLAUDE.md"))
+
+        self.assertEqual(s.setup().status, 0)
+
+        self.assertEqual(os.readlink(os.path.join(s.work, "CLAUDE.md")), "AGENTS.md")
+        self.assertIn("`./ralph help`", self.ralph_section(s.read("AGENTS.md")))
+
+    def test_issue_tracker_instructions_ralph_did_not_write_are_kept_and_reported(self):
+        s = self.scenario()
+        s.release()
+        s.commit_file("docs/agents/issue-tracker.md", "# Issue tracker: ours\n", "Our tracker")
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(s.read("docs/agents/issue-tracker.md"), "# Issue tracker: ours\n")
+        self.assertIn("kept docs/agents/issue-tracker.md, which ralph did not write", result.output)
+
+    def ralph_section(self, text):
+        """The ralph section of agent instructions, markers included; fails unless there is exactly one."""
+        self.assertEqual(text.count("<!-- ralph:begin"), 1, text)
+        self.assertEqual(text.count("<!-- ralph:end -->"), 1, text)
+        return text[text.index("<!-- ralph:begin") : text.index("<!-- ralph:end -->") + len("<!-- ralph:end -->")]
+
+
+class SetupAgain(ScenarioTestCase):
+    scenario = Setup.scenario
+
+    def snapshot(self, s):
+        """Every file of the project but git's own, with its content, mode and modification time."""
+        files = {}
+        for directory, dirs, names in os.walk(s.work):
+            dirs[:] = [d for d in dirs if d != ".git"]
+            for name in names:
+                path = os.path.join(directory, name)
+                info = os.stat(path)
+                with open(path, "rb") as f:
+                    files[os.path.relpath(path, s.work)] = (f.read(), info.st_mode, info.st_mtime_ns)
+        return files
+
+    def test_setting_up_a_set_up_project_again_changes_nothing(self):
+        s = self.scenario()
+        s.release()
+        self.assertEqual(s.setup().status, 0)
+        before = self.snapshot(s)
+        mutations = s.events()
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(result.output, f"ralph: {s.work} is already set up for ralph {VERSION}; nothing changed\n")
+        self.assertEqual(self.snapshot(s), before)
+        self.assertEqual(s.events(), mutations)
+
+    def test_setup_again_keeps_the_maintainers_configuration_rules_and_pin(self):
+        s = self.scenario()
+        s.release()
+        self.assertEqual(s.setup().status, 0)
+        s.write(".ralph/config", "verify = make check\n")
+        s.write(".ralph/rules/implement.md", "Use tabs.\n")
+        s.write(".ralph/rules/review.md", "Be kind.\n")
+        s.write(".ralph/pin", "v0.0.9\n")
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(s.read(".ralph/config"), "verify = make check\n")
+        self.assertEqual(s.read(".ralph/rules/implement.md"), "Use tabs.\n")
+        self.assertEqual(s.read(".ralph/rules/review.md"), "Be kind.\n")
+        self.assertEqual(s.read(".ralph/pin"), "v0.0.9\n")
+
+    def test_setup_again_restores_and_refreshes_what_is_ralphs(self):
+        s = self.scenario()
+        s.release()
+        self.assertEqual(s.setup().status, 0)
+        fresh = {path: s.read(path) for path in ("ralph", ".ralph/.gitignore", "docs/agents/issue-tracker.md")}
+        claude_md = s.read("CLAUDE.md")
+        os.remove(os.path.join(s.work, "ralph"))
+        os.remove(os.path.join(s.work, ".ralph", ".gitignore"))
+        s.write("docs/agents/issue-tracker.md", s.read("docs/agents/issue-tracker.md") + "Stale.\n")
+        s.write("CLAUDE.md", "# Widgets\n\n" + claude_md.replace("./ralph help", "ralph --help") + "\nMore.\n")
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 0, result.output)
+        for path, content in fresh.items():
+            self.assertEqual(s.read(path), content, path)
+        self.assertTrue(os.access(os.path.join(s.work, "ralph"), os.X_OK))
+        self.assertEqual(s.read("CLAUDE.md"), "# Widgets\n\n" + claude_md + "\nMore.\n")
+        self.assertIn("  created ralph\n", result.output)
+        self.assertIn("  refreshed CLAUDE.md\n", result.output)
+
+    def test_an_existing_label_is_left_as_it_is(self):
+        s = self.scenario()
+        s.release()
+        s.add_label("ready-for-agent")
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(s.events(), [])
+        self.assertNotIn("label", result.output)
+
+    def test_a_broken_ralph_section_stops_setup_before_it_changes_anything(self):
+        s = self.scenario()
+        s.release()
+        s.commit_file("CLAUDE.md", "# Widgets\n\n<!-- ralph:begin -->\nhalf a section\n", "Broken section")
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertIn("ralph: CLAUDE.md has a broken ralph section", result.output)
+        self.assertEqual(s.status(), "")
+        self.assertEqual(s.events(), [])
+
+    def test_a_file_named_like_the_wrapper_stops_setup_before_it_changes_anything(self):
+        s = self.scenario()
+        s.release()
+        s.commit_file("ralph", "#!/bin/sh\necho mine\n", "Our own ralph")
+
+        result = s.setup()
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertIn(f"ralph: {s.work}/ralph exists and is not ralph's wrapper", result.output)
+        self.assertEqual(s.status(), "")
+        self.assertEqual(s.events(), [])
