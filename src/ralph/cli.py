@@ -116,7 +116,7 @@ def _parser() -> argparse.ArgumentParser:
         help="(maintainer) set a project up for ralph",
         description="Maintainer only, run from a clone of ralph. Sets the git repository holding <directory> "
         "(default: the current directory) up as a project: the wrapper at its root, the pin, the configuration "
-        "and empty project rules in .ralph, a .gitignore that keeps run logs out of version control, the "
+        "and empty project rules in .ralph, the "
         "ready-for-agent label on its GitHub repository, the issue-tracker instructions the bundled skills read "
         "(docs/agents/issue-tracker.md) and a short section about ralph in its CLAUDE.md, or AGENTS.md when only "
         "that exists. The pin is the release the clone is at, the version tag on its HEAD; a project that already "

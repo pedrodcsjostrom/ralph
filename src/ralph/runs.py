@@ -5,8 +5,10 @@ import re
 import time
 from typing import Optional
 
-# Relative to the project root. Ignored by git through its own .gitignore, so a
-# run never dirties the tree whatever the project's ignore rules say.
+# Relative to the project root. Ignored by git through its own .gitignore, which
+# the first run writes, so a run never dirties the tree whatever the project's
+# ignore rules say, whether the project was set up or ralph runs on it bare. It
+# is the only ignore rule ralph has: the pin, configuration and rules are checked in.
 RUNS = os.path.join(".ralph", "runs")
 
 # A run directory is named after the second the run started, YYYYmmdd-HHMMSS,

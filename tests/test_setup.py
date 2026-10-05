@@ -132,14 +132,19 @@ class Setup(ScenarioTestCase):
         s = self.scenario()
         s.release()
         self.assertEqual(s.setup().status, 0)
-        s.write(".ralph/runs/20260101-000000/01-ticket-2.jsonl", "{}\n")
+        s.ticket(2)
 
         s.git("add", "-A")
-
         tracked = s.git("diff", "--cached", "--name-only").splitlines()
+        s.git("commit", "-q", "-m", "Set up ralph")
+        run = s.ralph("run", "1")
+
+        self.assertEqual(run.status, 0, run.output)
         for path in ("ralph", ".ralph/pin", ".ralph/config", ".ralph/rules/implement.md", ".ralph/rules/review.md"):
             self.assertIn(path, tracked)
-        self.assertFalse([p for p in tracked if p.startswith(".ralph/runs/")], tracked)
+        [logs] = s.run_dirs()
+        self.assertTrue(os.listdir(logs))
+        self.assertEqual(s.status(), "")
 
     def test_setup_creates_the_label_the_frontier_relies_on(self):
         s = self.scenario()
@@ -323,10 +328,9 @@ class SetupAgain(ScenarioTestCase):
         s = self.scenario()
         s.release()
         self.assertEqual(s.setup().status, 0)
-        fresh = {path: s.read(path) for path in ("ralph", ".ralph/.gitignore", "docs/agents/issue-tracker.md")}
+        fresh = {path: s.read(path) for path in ("ralph", "docs/agents/issue-tracker.md")}
         claude_md = s.read("CLAUDE.md")
         os.remove(os.path.join(s.work, "ralph"))
-        os.remove(os.path.join(s.work, ".ralph", ".gitignore"))
         s.write("docs/agents/issue-tracker.md", s.read("docs/agents/issue-tracker.md") + "Stale.\n")
         s.write("CLAUDE.md", "# Widgets\n\n" + claude_md.replace("./ralph help", "ralph --help") + "\nMore.\n")
 

@@ -1,13 +1,14 @@
 """Set-up: makes a git repository a project, from a clone of ralph.
 
 It writes what a project holds: the wrapper at the root, the pin, the
-configuration and the project rules, the ignore rule for the run logs, the
-issue-tracker instructions the bundled skills read and a section about ralph in
-the project's agent instructions; and it makes sure the tracker has the label
-the frontier relies on.
+configuration and the project rules, the issue-tracker instructions the bundled
+skills read and a section about ralph in the project's agent instructions; and
+it makes sure the tracker has the label the frontier relies on. The run logs
+need no ignore rule from set-up: every run keeps them out of version control
+itself (see ralph.runs), set up or not.
 
-What is ralph's (the wrapper, the ignore rule, the issue-tracker instructions
-and the section) is refreshed on every set-up; what is the project's (the pin,
+What is ralph's (the wrapper, the issue-tracker instructions and the section)
+is refreshed on every set-up; what is the project's (the pin,
 the configuration and the project rules) is only created when missing. So
 running it again on a project that is already set up changes nothing, or
 repairs what is missing or out of date.
@@ -36,8 +37,6 @@ from ralph.tracker import READY, Tracker
 WRAPPER = "ralph"
 # A line of the wrapper's own documentation, which tells a wrapper from any other file named ralph.
 WRAPPER_MARK = "This is ralph's wrapper"
-# Keeps the run logs, and only them, out of version control: the pin, configuration and rules are checked in.
-IGNORE = os.path.join(".ralph", ".gitignore")
 # The label the frontier relies on, as set-up creates it when the repository lacks it.
 LABEL_DESCRIPTION = "Fully specified, ready for an agent to implement"
 LABEL_COLOR = "0e8a16"
@@ -191,7 +190,6 @@ def setup(root: str, clone: str, tracker: Tracker, version: Optional[str] = None
     files.create(config.FILE, configuration())
     for rules in RULES.values():
         files.create(rules, "")
-    files.write(IGNORE, "/runs/\n")
 
     existing_tracker = files.text(ISSUE_TRACKER)
     if existing_tracker is None or existing_tracker.startswith(TRACKER_MARK):

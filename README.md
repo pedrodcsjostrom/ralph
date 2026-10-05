@@ -38,7 +38,6 @@ Set-up writes:
 - the pin, `.ralph/pin`;
 - the configuration, `.ralph/config`, with every key commented out at its default;
 - empty project rules, `.ralph/rules/implement.md` and `.ralph/rules/review.md`;
-- `.ralph/.gitignore`, which keeps the run logs in `.ralph/runs/` out of version control;
 - `docs/agents/issue-tracker.md`, the issue-tracker instructions the bundled skills read;
 - a short section about ralph in the project's `CLAUDE.md`, or in `AGENTS.md` when only that exists.
 
