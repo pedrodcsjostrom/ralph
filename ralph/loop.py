@@ -118,6 +118,7 @@ class Loop:
         )
         log = os.path.join(self.run_dir, f"{self.iteration:02d}-ticket-{n}.jsonl")
         final = self.agent.run(prompt, log, self.console.prose)
+        self._check_checkout(f"iteration {self.iteration} (ticket #{n})")
 
         reason = self._not_done(final, before) or self._verify(n)
         if reason is None:
@@ -129,6 +130,15 @@ class Loop:
         if attempt >= self.config.max_attempts:
             self.left_alone.add(n)
             self.console.say(f"giving up on #{n} after {attempt} attempts; it is left alone for the rest of this run")
+
+    def _check_checkout(self, culprit: str) -> None:
+        """Stops the run unless the checkout is clean and on the integration branch, so nothing builds on a mess."""
+        if not self.checkout.is_clean():
+            raise RalphError(f"{culprit} left uncommitted changes; inspect them, then rerun")
+        branch = self.checkout.current_branch()
+        if branch != self.branch:
+            where = "HEAD detached" if branch is None else f"the checkout on {branch}"
+            raise RalphError(f"{culprit} left {where}, off {self.branch}; switch back, then rerun")
 
     def _not_done(self, final: str, before: str) -> Optional[str]:
         """Why the attempt that started at before did not finish its ticket, or None if it did."""

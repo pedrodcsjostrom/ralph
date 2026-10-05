@@ -115,5 +115,64 @@ class Verify(ScenarioTestCase):
         self.assertEqual(s.events(), ["agent #2"])
 
 
+class CheckoutInvariants(ScenarioTestCase):
+    def test_an_agent_that_leaves_uncommitted_changes_stops_the_run(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.ticket(3)
+        s.agent_does(2, "dirty")
+
+        result = s.ralph("run", "1")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertEqual(s.events(), ["agent #2"])
+        self.assertIn(
+            "ralph: iteration 1 (ticket #2) left uncommitted changes; inspect them, then rerun", result.output
+        )
+        self.assertNotEqual(s.status(), "")
+
+    def test_an_agent_that_switches_branch_stops_the_run(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.ticket(3)
+        s.agent_does(2, "switch-branch")
+
+        result = s.ralph("run", "1")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertEqual(s.events(), ["agent #2"])
+        self.assertIn(
+            "ralph: iteration 1 (ticket #2) left the checkout on elsewhere, off spec/1-spec-widget-sorting; "
+            "switch back, then rerun",
+            result.output,
+        )
+
+    def test_an_agent_that_detaches_head_stops_the_run(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_does(2, "detach")
+
+        result = s.ralph("run", "1")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertEqual(s.events(), ["agent #2"])
+        self.assertIn(
+            "ralph: iteration 1 (ticket #2) left HEAD detached, off spec/1-spec-widget-sorting; "
+            "switch back, then rerun",
+            result.output,
+        )
+
+    def test_the_invariants_are_checked_before_verify_and_close(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_does(2, "complete-dirty")
+
+        result = s.ralph("run", "1", RALPH_VERIFY="exit 1")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertEqual(s.events(), ["agent #2"])
+        self.assertIn("left uncommitted changes", result.output)
+
+
 if __name__ == "__main__":
     unittest.main()
