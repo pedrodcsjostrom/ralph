@@ -237,7 +237,8 @@ def main(args):
         if handler is None:
             unexpected(args)
         state = load()
-        time.sleep(state.get("delay", 0))
+        if state.get("delay_only") in (None, " ".join(args[:2])):
+            time.sleep(state.get("delay", 0))
         call.update(handler(state, args) or {})
     except SystemExit as exit:
         call["status"] = exit.code

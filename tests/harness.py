@@ -127,10 +127,12 @@ class Scenario:
         tracker["logged_in"] = logged_in
         self._write_state("tracker", tracker)
 
-    def tracker_delays(self, seconds):
-        """Makes every call to the tracker take seconds, as a slow network does."""
+    def tracker_delays(self, seconds, only=None):
+        """Makes every call to the tracker take seconds, as a slow network does; given only, such as "pr create",
+        just the calls of that command."""
         tracker = self._read_state("tracker")
         tracker["delay"] = seconds
+        tracker["delay_only"] = only
         self._write_state("tracker", tracker)
 
     def issue(self, number):
@@ -243,6 +245,13 @@ class Scenario:
         subprocess.run(("git", "init", "-q", "--bare", path), env=self.env(), check=True)
         self.git("remote", "add", name, path)
         return path
+
+    def remote_delays(self, seconds, name="origin"):
+        """Makes every push to the remote take seconds, as a slow network does."""
+        hook = os.path.join(self.root, name + ".git", "hooks", "pre-receive")
+        with open(hook, "w") as f:
+            f.write(f"#!{sys.executable}\nimport sys, time\nsys.stdin.read()\ntime.sleep({seconds!r})\n")
+        os.chmod(hook, 0o755)
 
     def remote_branches(self, name="origin"):
         """The branches of the remote and the commits they point at, as {branch: sha}."""

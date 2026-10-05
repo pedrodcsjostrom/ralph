@@ -159,9 +159,10 @@ def _publish(args: argparse.Namespace, console: Console) -> int:
         )
     with open(path, encoding="utf-8") as f:
         body = f.read()
-    tracker_ = Tracker(repo.root)
+    tracker_ = Tracker(repo.root, console.progress)
     title = tracker_.spec_title(record.spec)
-    repo.push(record.branch)
+    with console.progress.waiting(f"pushing {record.branch}"):
+        repo.push(record.branch)
     console.say(f"pushed {record.branch}")
     url = tracker_.open_pull_request(config.main_branch, record.branch, title, body)
     console.say(f"opened the pull request {url}")
