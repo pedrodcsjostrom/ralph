@@ -14,7 +14,7 @@ It tells ralph which project to act on by setting RALPH_PROJECT to the
 directory it lives in, so a command acts on this project wherever it is run.
 
 While it fetches it shows the working indicator, by the same rules as ralph's
-(ralph/progress.py, which this file cannot import): an animated line on a
+(src/ralph/progress.py, which this file cannot import): an animated line on a
 terminal, a plain "ralph: working: ..." line every interval otherwise, and
 nothing left behind however the fetch ends. tests/test_wrapper.py keeps the two
 in step.
@@ -47,7 +47,7 @@ class Failure(Exception):
     pass
 
 
-# The working indicator: a minimal copy of ralph/progress.py (one wait at a time, nothing written above it), kept to
+# The working indicator: a minimal copy of src/ralph/progress.py (one wait at a time, nothing written above it), kept to
 # the same output byte for byte.
 
 # Seconds between plain progress lines when output is not a terminal.

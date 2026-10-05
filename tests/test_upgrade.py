@@ -19,8 +19,8 @@ class UpgradeWorld(WrapperWorld):
         self.git(self.project, "init", "-q")
         shutil.copytree(os.path.join(ROOT, "bin"), os.path.join(self.public, "bin"))
         shutil.copytree(
-            os.path.join(ROOT, "ralph"),
-            os.path.join(self.public, "ralph"),
+            os.path.join(ROOT, "src"),
+            os.path.join(self.public, "src"),
             ignore=shutil.ignore_patterns("__pycache__"),
         )
         self.git(self.public, "add", "-A")

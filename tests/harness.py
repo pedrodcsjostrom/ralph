@@ -311,7 +311,7 @@ class Scenario:
     def use_ralph_copy(self):
         """Runs a scratch copy of ralph from now on, so a test can break it. Returns the copy's plugin directory."""
         copy = os.path.join(self.root, "ralph")
-        for part in ("bin", "ralph", "plugin"):
+        for part in ("bin", "src", "plugin"):
             shutil.copytree(
                 os.path.join(ROOT, part), os.path.join(copy, part), ignore=shutil.ignore_patterns("__pycache__")
             )

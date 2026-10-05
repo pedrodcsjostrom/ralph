@@ -32,7 +32,7 @@ class Clone:
         self.home = os.path.join(root, "home")
         self.installed = os.path.join(self.home, ".agents", "skills")
         self.skills = os.path.join(self.home, ".claude", "skills")
-        for part in ("bin", "ralph"):
+        for part in ("bin", "src"):
             shutil.copytree(
                 os.path.join(ROOT, part), os.path.join(self.clone, part), ignore=shutil.ignore_patterns("__pycache__")
             )

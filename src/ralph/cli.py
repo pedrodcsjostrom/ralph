@@ -7,7 +7,21 @@ from collections.abc import Mapping
 from types import ModuleType
 from typing import Optional
 
-from ralph import agent, checkout, draft, manual, pin, progress, project, prompts, runs, setup, skill_sync, tracker
+from ralph import (
+    CLONE,
+    agent,
+    checkout,
+    draft,
+    manual,
+    pin,
+    progress,
+    project,
+    prompts,
+    runs,
+    setup,
+    skill_sync,
+    tracker,
+)
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
@@ -224,7 +238,7 @@ def _publish(args: argparse.Namespace, console: Console) -> int:
 
 
 def _sync_skills(args: argparse.Namespace, console: Console) -> int:
-    plugin = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin")
+    plugin = os.path.join(CLONE, "plugin")
     unbundled = skill_sync.sync(args.skills, plugin)
     console.say(f"bundled {', '.join(skill_sync.BUNDLED)} into {plugin}")
     if unbundled:
@@ -238,8 +252,7 @@ def _sync_skills(args: argparse.Namespace, console: Console) -> int:
 def _setup(args: argparse.Namespace, console: Console) -> int:
     require_tools(checkout, tracker)
     root = Checkout.at(os.path.abspath(args.directory)).root
-    clone = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    outcome = setup.setup(root, clone, Tracker(root, console.progress))
+    outcome = setup.setup(root, CLONE, Tracker(root, console.progress))
     for note in outcome.notes:
         console.say(note)
     if outcome.changes:

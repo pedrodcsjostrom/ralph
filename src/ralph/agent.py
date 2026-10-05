@@ -15,11 +15,11 @@ import threading
 from collections.abc import Mapping, Sequence
 from typing import Callable, Optional
 
-from ralph import proc, skill_sync
+from ralph import CLONE, proc, skill_sync
 from ralph.errors import RalphError
 
 # The bundled skills, loaded for each session only and invoked under the `ralph:` namespace.
-PLUGIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin")
+PLUGIN = os.path.join(CLONE, "plugin")
 SKILLS = sorted("ralph:" + name for name in skill_sync.BUNDLED)
 
 HEADLESS = ["--print", "--verbose", "--output-format", "stream-json", "--no-session-persistence"]

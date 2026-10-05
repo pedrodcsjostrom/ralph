@@ -21,7 +21,7 @@ class SetupScenario(Scenario):
         self.clone = os.path.join(root, "ralph-clone")
         self.cache = os.path.join(root, "cache")
         super().__init__(root)
-        for part in ("bin", "ralph", "plugin", "wrapper"):
+        for part in ("bin", "src", "plugin", "wrapper"):
             shutil.copytree(
                 os.path.join(ROOT, part), os.path.join(self.clone, part), ignore=shutil.ignore_patterns("__pycache__")
             )

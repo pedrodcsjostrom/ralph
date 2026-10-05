@@ -1,4 +1,4 @@
-"""The wrapper's indicator is a copy of ralph/progress.py, since the wrapper cannot import ralph.
+"""The wrapper's indicator is a copy of src/ralph/progress.py, since the wrapper cannot import ralph.
 
 These keep the copy in step: driven the same way, both write the same bytes.
 """
