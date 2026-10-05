@@ -4,6 +4,14 @@
 [tool.ruff]
 line-length = 120
 target-version = "py39"
+# The entry point and the wrapper are Python files without a .py extension.
+extend-include = ["bin/ralph", "wrapper/ralph"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# These two check the Python version themselves, and use %-formatting so that
+# an interpreter too old for f-strings still parses them far enough to say so.
+"bin/ralph" = ["UP031", "UP036"]
+"wrapper/ralph" = ["UP031", "UP036"]
