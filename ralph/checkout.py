@@ -83,6 +83,17 @@ class Checkout:
             raise RalphError(f"there is no branch {b} to take the run base from")
         return self._git("merge-base", a, b).strip()
 
+    def push(self, branch: str, remote: str = "origin") -> None:
+        """Pushes branch to the branch of the same name on remote, and has the local branch track it."""
+        if self.resolve("refs/heads/" + branch) is None:
+            raise RalphError(f"there is no branch {branch} in this repository to push")
+        if not proc.succeeds(["git", "remote", "get-url", remote], cwd=self.root):
+            raise RalphError(f"this repository has no remote named {remote} to push {branch} to")
+        pushed = proc.completed(["git", "push", "--set-upstream", remote, f"refs/heads/{branch}"], cwd=self.root)
+        if pushed.returncode != 0:
+            detail = "\n".join(("  " + line).rstrip() for line in pushed.stderr.strip().splitlines())
+            raise RalphError(f"could not push {branch} to {remote}:\n{detail}")
+
     def commits(self, since: str, until: str = "HEAD", limit: Optional[int] = None) -> list[Commit]:
         """The commits in since..until, newest first."""
         args = ["log", "--format=%H%x00%ad%x00%B%x01", "--date=short"]

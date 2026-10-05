@@ -9,7 +9,7 @@ import argparse
 import textwrap
 from collections.abc import Mapping
 
-from ralph import agent, config, pin, project
+from ralph import agent, config, pin, progress, project
 
 WIDTH = 100
 
@@ -23,6 +23,10 @@ ENVIRONMENT = (
     ("RALPH_REPOSITORY", f"where ralph's releases are listed and fetched from (default: {pin.REPOSITORY})"),
     ("RALPH_CACHE", "the per-user cache of fetched versions (default: $XDG_CACHE_HOME/ralph, or ~/.cache/ralph)"),
     ("RALPH_PROJECT", "the project to act on; the wrapper sets it to its own directory"),
+    (
+        progress.INTERVAL_VARIABLE,
+        f"seconds between progress lines while ralph waits, off a terminal (default: {progress.INTERVAL:g})",
+    ),
 )
 
 

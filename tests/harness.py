@@ -24,6 +24,8 @@ import sys
 import tempfile
 import unittest
 
+from tests import terminal
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RALPH = os.path.join(ROOT, "bin", "ralph")
 FAKES = os.path.join(ROOT, "tests", "fakes")
@@ -126,6 +128,12 @@ class Scenario:
         tracker["logged_in"] = logged_in
         self._write_state("tracker", tracker)
 
+    def tracker_delays(self, seconds):
+        """Makes every call to the tracker take seconds, as a slow network does."""
+        tracker = self._read_state("tracker")
+        tracker["delay"] = seconds
+        self._write_state("tracker", tracker)
+
     def issue(self, number):
         """The tracker's current view of an issue."""
         return self._read_state("tracker")["issues"][str(number)]
@@ -136,6 +144,12 @@ class Scenario:
         """Queues what the agent does on each attempt at a ticket (see tests/fakes/claude.py)."""
         agent = self._read_state("agent")
         agent["behaviours"][str(ticket)] = list(behaviours)
+        self._write_state("agent", agent)
+
+    def agent_pauses(self, seconds):
+        """Makes every headless run go silent for seconds in the middle of a tool call."""
+        agent = self._read_state("agent")
+        agent["pause"] = seconds
         self._write_state("agent", agent)
 
     def review_finds(self, round_, *findings):
@@ -230,11 +244,37 @@ class Scenario:
     def status(self):
         return self.git("status", "--porcelain")
 
+    def add_remote(self, name="origin"):
+        """Creates a local bare repository and adds it to the repository as remote name."""
+        path = os.path.join(self.root, name + ".git")
+        subprocess.run(("git", "init", "-q", "--bare", path), env=self.env(), check=True)
+        self.git("remote", "add", name, path)
+        return path
+
+    def remote_branches(self, name="origin"):
+        """The branches of the remote and the commits they point at, as {branch: sha}."""
+        out = self.git("ls-remote", "--heads", name)
+        prefix = "refs/heads/"
+        return {ref[len(prefix) :]: sha for sha, ref in (line.split("\t") for line in out.splitlines())}
+
+    def pull_requests(self):
+        """The pull requests opened on the fake tracker, oldest first."""
+        return self._read_state("tracker").get("pull_requests", [])
+
     def run_dirs(self):
+        """The run directories, oldest first."""
         runs = os.path.join(self.work, ".ralph", "runs")
         if not os.path.isdir(runs):
             return []
-        return sorted(os.path.join(runs, d) for d in os.listdir(runs) if os.path.isdir(os.path.join(runs, d)))
+        names = [d for d in os.listdir(runs) if os.path.isdir(os.path.join(runs, d))]
+
+        def started(name):
+            # YYYYmmdd-HHMMSS, then -N for the Nth run started in the same second.
+            day, _, rest = name.partition("-")
+            second, _, n = rest.partition("-")
+            return day, second, int(n or 1)
+
+        return [os.path.join(runs, d) for d in sorted(names, key=started)]
 
     # Ralph.
 
@@ -260,6 +300,16 @@ class Scenario:
             timeout=120,
         )
         return Result(proc.returncode, proc.stdout)
+
+    def ralph_on_terminal(self, *args, columns=terminal.COLUMNS, interrupt_when=None, **env):
+        """Runs ralph on a pseudo-terminal (see tests/terminal.py), typing Ctrl-C once interrupt_when shows."""
+        return terminal.run(
+            [sys.executable, RALPH, *args],
+            cwd=self.work,
+            env=self.env(TERM="xterm-256color", **env),
+            columns=columns,
+            interrupt_when=interrupt_when,
+        )
 
 
 class ScenarioTestCase(unittest.TestCase):

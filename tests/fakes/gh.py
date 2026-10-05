@@ -2,7 +2,8 @@
 
 The harness installs this file as `gh` first on the path of the run under test.
 Its state lives in `$RALPH_FAKE/tracker.json` (see `tests/harness.py` for the
-shape) and every invocation is appended to `$RALPH_FAKE/calls.jsonl`.
+shape; "delay" makes every call take that many seconds) and every invocation
+is appended to `$RALPH_FAKE/calls.jsonl`.
 
 Only the calls ralph is known to make are understood. Anything else exits
 non-zero with "fake gh: unexpected call", so a new use of `gh` in ralph fails
@@ -17,7 +18,9 @@ call's record, which is how tests observe mutations.
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 
 FAKE = os.environ["RALPH_FAKE"]
 STATE = os.path.join(FAKE, "tracker.json")
@@ -132,6 +135,23 @@ def issue_comment(state, args):
     return {"mutation": "comment", "ticket": number, "body": body}
 
 
+def pr_create(state, args):
+    """`gh pr create --repo R --base B --head H --title T --body-file -`. Like gh, it wants the head pushed first."""
+    head, base = option(args, "--head"), option(args, "--base")
+    if option(args, "--repo") != state["repo"] or None in (head, base) or option(args, "--body-file") != "-":
+        unexpected(args)
+    pushed = subprocess.run(["git", "ls-remote", "--exit-code", "--heads", "origin", head], stdout=subprocess.DEVNULL)
+    if pushed.returncode != 0:
+        fail("aborted: you must first push the current branch to a remote, or use the --head flag")
+    pulls = state.setdefault("pull_requests", [])
+    number = max([int(n) for n in state["issues"]] + [p["number"] for p in pulls]) + 1
+    pull = {"number": number, "base": base, "head": head, "title": option(args, "--title"), "body": sys.stdin.read()}
+    pulls.append(pull)
+    save(state)
+    print("https://github.com/{}/pull/{}".format(state["repo"], number))
+    return {"mutation": "pull request", "ticket": number, "pull": pull}
+
+
 def create_issue(state, args):
     """`gh api repos/<repo>/issues --method POST --input -`: the new issue's fields come in on stdin."""
     fields = json.load(sys.stdin)
@@ -205,6 +225,7 @@ HANDLERS = {
     ("issue", "view"): issue_view,
     ("issue", "close"): issue_close,
     ("issue", "comment"): issue_comment,
+    ("pr", "create"): pr_create,
     ("api",): api,
 }
 
@@ -215,7 +236,9 @@ def main(args):
         handler = HANDLERS.get(tuple(args[:2])) or HANDLERS.get(tuple(args[:1]))
         if handler is None:
             unexpected(args)
-        call.update(handler(load(), args) or {})
+        state = load()
+        time.sleep(state.get("delay", 0))
+        call.update(handler(state, args) or {})
     except SystemExit as exit:
         call["status"] = exit.code
         raise

@@ -1,17 +1,22 @@
 """What the runner reads on the terminal: ralph's own messages and the agents' prose."""
 
 import sys
-from typing import TextIO
+from typing import Optional, TextIO
+
+from ralph.progress import Progress
 
 
 class Console:
-    def __init__(self, out: TextIO = sys.stdout, err: TextIO = sys.stderr):
+    def __init__(self, out: TextIO = sys.stdout, err: TextIO = sys.stderr, progress: Optional[Progress] = None):
         self.out = out
         self.err = err
+        # The working indicator lives under everything written here.
+        self.progress = progress or Progress(out)
 
     def _write(self, stream: TextIO, text: str) -> None:
-        stream.write(text)
-        stream.flush()
+        with self.progress.above():
+            stream.write(text)
+            stream.flush()
 
     def say(self, message: str) -> None:
         self._write(self.out, f"ralph: {message}\n")
@@ -30,3 +35,7 @@ class Console:
     def error(self, message: str) -> None:
         self.out.flush()
         self._write(self.err, f"ralph: {message}\n")
+
+    def passthrough(self, text: str) -> None:
+        """Output of a tool ralph runs that is meant for the runner, such as an agent's warnings."""
+        self._write(self.err, text if text.endswith("\n") else text + "\n")
