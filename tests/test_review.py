@@ -316,6 +316,7 @@ class TheRunRecord(ScenarioTestCase):
                         "findings_file": f"{run}/review-1.json",
                         "resolves": [],
                         "fix_tickets": [3],
+                        "finished": True,
                     },
                     {
                         "round": 2,
@@ -324,6 +325,7 @@ class TheRunRecord(ScenarioTestCase):
                         "findings_file": f"{run}/review-2.json",
                         "resolves": [3],
                         "fix_tickets": [],
+                        "finished": True,
                     },
                 ],
                 "outcome": "complete",

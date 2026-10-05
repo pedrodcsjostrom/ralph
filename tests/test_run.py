@@ -307,7 +307,14 @@ class WhatTheRunnerSees(ScenarioTestCase):
         self.assertIn(f"logs in {run}", result.output)
         self.assertEqual(
             sorted(os.listdir(run)),
-            ["01-ticket-2.jsonl", "02-ticket-3.jsonl", "03-review-1.jsonl", "review-1.json", "run.json"],
+            [
+                "01-ticket-2.jsonl",
+                "02-ticket-3.jsonl",
+                "03-review-1.jsonl",
+                "pull-request.md",
+                "review-1.json",
+                "run.json",
+            ],
         )
         with open(os.path.join(run, "01-ticket-2.jsonl")) as f:
             events = [json.loads(line) for line in f]

@@ -11,18 +11,17 @@ import re
 from collections.abc import Iterable
 from typing import Optional
 
-from ralph import findings, prompts, runs, verify
+from ralph import draft, findings, project, prompts, runs, verify
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
 from ralph.console import Console
-from ralph.errors import RalphError
+from ralph.errors import RalphError, Reported
 from ralph.record import ReviewRoundRecord, RunRecord
 from ralph.tracker import Ticket, Tracker
 
 READY = "ready-for-agent"
 COMPLETE = "<promise>TICKET COMPLETE</promise>"
-MAIN = "main"
 
 
 def frontier(tickets: Iterable[Ticket], leave_alone: Iterable[int] = ()) -> list[Ticket]:
@@ -66,17 +65,28 @@ class Loop:
         try:
             self._rounds()
         except RalphError as e:
-            self.record.outcome, self.record.reason = "stopped", str(e)
-            self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
-            self.record.save(self.run_dir)
-            raise
-        self.record.outcome = "complete"
-        self.record.save(self.run_dir)
+            self.console.error(str(e))
+            self._end("stopped", str(e))
+            raise Reported(1) from None
+        except KeyboardInterrupt:
+            self.console.error("interrupted")
+            self._end("stopped", "interrupted")
+            raise Reported(130) from None
         self.console.say(
             f"complete after {self.iteration} iterations. "
             f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
         )
         self.console.say("nothing was pushed. Look it over, then open the pull request.")
+        self._end("complete")
+
+    def _end(self, outcome: str, reason: Optional[str] = None) -> None:
+        """Records how the run ended and leaves the pull request draft, then points the runner at it."""
+        self.record.outcome, self.record.reason = outcome, reason
+        if outcome != "complete":
+            self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
+        self.record.save(self.run_dir)
+        path = draft.write(self.run_dir, self.record, self.checkout.commits(self.base))
+        self.console.say(f"the pull request draft is {path}")
 
     def _rounds(self) -> None:
         """Implements the frontier, then reviews, until a review round finds nothing or nothing is left to review.
@@ -153,17 +163,32 @@ class Loop:
 
         # The whole spec lands on one integration branch and main never gets a
         # commit. Started from any other branch, that branch is the integration branch.
-        if branch == MAIN:
+        main = self.config.main_branch
+        self.base = self._run_base(main)
+        if branch == main:
             branch = integration_branch(self.spec, title)
             self.checkout.switch(branch)
         self.branch = branch
-        self.base = self.checkout.merge_base("HEAD", MAIN)
         # The commit the next review round compares the work against.
         self.fixed_point = self.base
-        self.context = prompts.RunContext(spec=self.spec, repo=self.tracker.repo, branch=branch)
+        self.context = prompts.RunContext(
+            spec=self.spec,
+            repo=self.tracker.repo,
+            branch=branch,
+            rules={kind: project.rules(self.checkout.root, kind) for kind in project.RULES},
+        )
         self.run_dir = runs.create(self.checkout.root)
         self.record = RunRecord(spec=self.spec, branch=branch, base=self.base)
         self.record.save(self.run_dir)
+
+    def _run_base(self, main: str) -> str:
+        """The configured run base, or else the merge base of HEAD with the main branch."""
+        if self.config.run_base is None:
+            return self.checkout.merge_base("HEAD", main)
+        base = self.checkout.resolve(self.config.run_base)
+        if base is None:
+            raise RalphError(f"the run base {self.config.run_base!r} (run_base) is not a commit in this repository")
+        return base
 
     def _implement(self, ticket: Ticket) -> None:
         self.iteration += 1
@@ -246,6 +271,8 @@ class Loop:
             self.record.ticket(n, finding.title, from_review_round=round_)
             self.record.save(self.run_dir)
             self.console.say(f"review finding is now #{n}: {finding.title}")
+        record.finished = True
+        self.record.save(self.run_dir)
         return record.fix_tickets
 
     def _check_checkout(self, culprit: str) -> None:

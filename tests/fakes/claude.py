@@ -116,6 +116,13 @@ def detach(ticket):
     return promise
 
 
+def interrupt(ticket):
+    """Commits, then interrupts ralph as Ctrl-C on the terminal would (ralph is this process's parent)."""
+    commit(ticket)
+    os.kill(os.getppid(), signal.SIGINT)
+    return "TICKET COMPLETE"
+
+
 BEHAVIOURS = {
     "complete": complete,
     "blocked": blocked,
@@ -125,6 +132,7 @@ BEHAVIOURS = {
     "complete-dirty": complete_dirty,
     "switch-branch": switch_branch,
     "detach": detach,
+    "interrupt": interrupt,
 }
 
 

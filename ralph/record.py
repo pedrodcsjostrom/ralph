@@ -37,6 +37,8 @@ class ReviewRoundRecord:
     resolves: list[int] = field(default_factory=list)
     # The fix tickets created from this round's findings; none means the round was clean.
     fix_tickets: list[int] = field(default_factory=list)
+    # Whether the round got as far as publishing all its findings; a round that broke off never passes for clean.
+    finished: bool = False
 
 
 @dataclass
@@ -52,6 +54,11 @@ class RunRecord:
     reason: Optional[str] = None
     # Commits on the integration branch that no review round covered, full shas, oldest first.
     unreviewed: list[str] = field(default_factory=list)
+
+    @property
+    def ended_cleanly(self) -> bool:
+        """Whether the run completed: every ticket closed and the last review round clean."""
+        return self.outcome == "complete"
 
     def ticket(self, number: int, title: str, from_review_round: Optional[int] = None) -> TicketRecord:
         """The record of a ticket, started on first use."""

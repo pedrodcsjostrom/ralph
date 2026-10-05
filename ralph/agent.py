@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import threading
+from collections.abc import Sequence
 from typing import Callable, Optional
 
 from ralph import proc
@@ -72,8 +73,10 @@ def activity(event: dict, directory: str = "") -> Optional[str]:
 
 
 class Agent:
-    def __init__(self, directory: str):
+    def __init__(self, directory: str, flags: Sequence[str] = ()):
         self.directory = directory
+        # The project's extra flags, after ralph's own so they can refine them.
+        self.flags = list(flags)
 
     def run(
         self,
@@ -92,7 +95,7 @@ class Agent:
         """
         try:
             agent = subprocess.Popen(
-                ["claude"] + HEADLESS + PERMISSIONS,
+                ["claude"] + HEADLESS + PERMISSIONS + self.flags,
                 cwd=self.directory,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
