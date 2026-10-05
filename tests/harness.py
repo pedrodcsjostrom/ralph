@@ -64,6 +64,7 @@ class Scenario:
             {
                 "repo": REPO,
                 "logged_in": True,
+                "labels": ["bug", "enhancement"],
                 "issues": {str(SPEC): {"title": SPEC_TITLE, "body": "The spec.", "sub_issues": []}},
             },
         )
@@ -136,6 +137,15 @@ class Scenario:
         tracker["delay_only"] = only
         self._write_state("tracker", tracker)
 
+    def add_label(self, name):
+        tracker = self._read_state("tracker")
+        tracker["labels"].append(name)
+        self._write_state("tracker", tracker)
+
+    def labels(self):
+        """The names of the repository's labels on the fake tracker."""
+        return self._read_state("tracker")["labels"]
+
     def issue(self, number):
         """The tracker's current view of an issue."""
         return self._read_state("tracker")["issues"][str(number)]
@@ -204,7 +214,8 @@ class Scenario:
         return [c for c in calls if tool is None or c["tool"] == tool]
 
     def events(self):
-        """Agent runs and tracker mutations, in order, as short strings like "agent #3", "split #1" and "close #3"."""
+        """Agent runs and tracker mutations, in order, as short strings like "agent #3", "split #1", "close #3" and
+        "label ready-for-agent"."""
         events = []
         for call in self.calls():
             if call["tool"] == "claude" and "ticket" in call:
@@ -213,6 +224,8 @@ class Scenario:
                 events.append(f"split #{call['split']}")
             elif call["tool"] == "claude" and "review" in call:
                 events.append(f"review {call['review']}")
+            elif call["tool"] == "gh" and call.get("mutation") == "label":
+                events.append(f"label {call['label']}")
             elif call["tool"] == "gh" and "mutation" in call:
                 events.append(f"{call['mutation']} #{call['ticket']}")
         return events

@@ -155,6 +155,27 @@ class Tracker:
         )
         return out.strip().splitlines()[-1]
 
+    def ensure_label(self, name: str, description: str, color: str) -> bool:
+        """Creates the label on the repository unless it is there already, as it is; says whether it created it."""
+        listed = json.loads(
+            self._gh("reading the labels", "label", "list", "--repo", self.repo, "--json", "name", "--limit", "1000")
+        )
+        if name in (label["name"] for label in listed):
+            return False
+        self._gh(
+            f"creating the {name} label",
+            "label",
+            "create",
+            name,
+            "--repo",
+            self.repo,
+            "--description",
+            description,
+            "--color",
+            color,
+        )
+        return True
+
     def create_ticket(self, spec: int, title: str, body: str, labels: Sequence[str]) -> int:
         """Opens a new ticket as a sub-issue of spec and returns its number."""
         fields = json.dumps({"title": title, "body": body, "labels": list(labels)})

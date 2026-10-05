@@ -70,6 +70,10 @@ class Checkout:
         else:
             self._git("switch", "--quiet", "--create", branch)
 
+    def tags_at_head(self) -> list[str]:
+        """The names of the tags pointing at HEAD."""
+        return self._git("tag", "--points-at", "HEAD").split()
+
     def head(self) -> str:
         return self._git("rev-parse", "HEAD").strip()
 

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from types import ModuleType
 from typing import Optional
 
-from ralph import agent, checkout, draft, manual, pin, progress, project, prompts, runs, skill_sync, tracker
+from ralph import agent, checkout, draft, manual, pin, progress, project, prompts, runs, setup, skill_sync, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
@@ -96,6 +96,23 @@ def _parser() -> argparse.ArgumentParser:
         description="Shows this help: every command and configuration key of the running version.",
     )
     help_.set_defaults(handler=lambda args, console: _help(commands.choices, console))
+
+    setup_ = commands.add_parser(
+        "setup",
+        help="(maintainer) set a project up for ralph",
+        description="Maintainer only, run from a clone of ralph. Sets the git repository holding <directory> "
+        "(default: the current directory) up as a project: the wrapper at its root, the pin, the configuration "
+        "and empty project rules in .ralph, a .gitignore that keeps run logs out of version control, the "
+        "ready-for-agent label on its GitHub repository, the issue-tracker instructions the bundled skills read "
+        "(docs/agents/issue-tracker.md) and a short section about ralph in its CLAUDE.md, or AGENTS.md when only "
+        "that exists. The pin is the release the clone is at, the version tag on its HEAD; a project that already "
+        "has a pin keeps it. Running it again repairs what is missing and refreshes what is ralph's, leaving the "
+        "configuration and project rules as they are. Nothing is committed.",
+    )
+    setup_.add_argument(
+        "directory", metavar="<directory>", nargs="?", default=".", help="a directory of the project to set up"
+    )
+    setup_.set_defaults(handler=_setup, maintainer=True)
 
     sync = commands.add_parser(
         "sync-skills",
@@ -215,6 +232,19 @@ def _sync_skills(args: argparse.Namespace, console: Console) -> int:
             "bundled skills refer to skills that are not bundled:\n"
             + "\n".join(f"  {path}: {reference}" for path, reference in unbundled)
         )
+    return 0
+
+
+def _setup(args: argparse.Namespace, console: Console) -> int:
+    require_tools(checkout, tracker)
+    root = Checkout.at(os.path.abspath(args.directory)).root
+    clone = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    version, changes = setup.setup(root, clone, Tracker(root, console.progress))
+    if changes:
+        console.say(f"set up {root} for ralph {version}:\n" + "\n".join("  " + c for c in changes))
+        console.say("review and commit the changes, then split a spec with `./ralph split <spec>`")
+    else:
+        console.say(f"{root} is already set up for ralph {version}; nothing changed")
     return 0
 
 

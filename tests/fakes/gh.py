@@ -152,6 +152,26 @@ def pr_create(state, args):
     return {"mutation": "pull request", "ticket": number, "pull": pull}
 
 
+def label_list(state, args):
+    """`gh label list --repo R --json name --limit N`."""
+    if option(args, "--repo") != state["repo"] or option(args, "--json") != "name":
+        unexpected(args)
+    limit = int(option(args, "--limit") or 30)
+    print(json.dumps([{"name": name} for name in state["labels"][:limit]]))
+
+
+def label_create(state, args):
+    """`gh label create <name> --repo R --description D --color C`. Like gh, it refuses a label that exists."""
+    name = args[2]
+    if option(args, "--repo") != state["repo"]:
+        unexpected(args)
+    if name in state["labels"]:
+        fail(f'label with name "{name}" already exists; use `--force` to update its color and description')
+    state["labels"].append(name)
+    save(state)
+    return {"mutation": "label", "label": name}
+
+
 def create_issue(state, args):
     """`gh api repos/<repo>/issues --method POST --input -`: the new issue's fields come in on stdin."""
     fields = json.load(sys.stdin)
@@ -226,6 +246,8 @@ HANDLERS = {
     ("issue", "close"): issue_close,
     ("issue", "comment"): issue_comment,
     ("pr", "create"): pr_create,
+    ("label", "list"): label_list,
+    ("label", "create"): label_create,
     ("api",): api,
 }
 
