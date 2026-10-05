@@ -65,6 +65,16 @@ class PlainProgress(ScenarioTestCase):
         self.assertIn("ralph: RALPH_PROGRESS_INTERVAL must be a number of seconds above 0, not 'soon'", result.output)
         self.assertEqual(s.events(), [])
 
+    def test_help_documents_the_interval(self):
+        s = self.scenario()
+
+        result = s.ralph("help")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertRegex(
+            result.output, r"\n  RALPH_PROGRESS_INTERVAL\n +seconds between progress lines .*\(default: 30\)\n"
+        )
+
     def test_a_quick_wait_writes_no_progress(self):
         s = self.scenario()
         s.ticket(2)
