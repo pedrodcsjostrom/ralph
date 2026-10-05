@@ -1,27 +1,72 @@
-"""Agent: the only module that launches Claude Code."""
+"""Agent: the only module that launches Claude Code.
+
+Every launch, headless or interactive, runs at project scope with the bundled skills
+(ADR 0001, ADR 0002): the `ralph` plugin of this copy of ralph is loaded for that session
+only, and the runner's user-level settings, instructions, memory, skills and MCP servers are
+switched off. Authentication still comes from the runner's login. What Claude Code cannot
+switch off is listed in docs/adr/0002-agents-run-at-project-scope-only.md.
+"""
 
 import json
+import os
+import re
 import subprocess
 import threading
-from collections.abc import Sequence
-from typing import Callable
+from collections.abc import Mapping, Sequence
+from typing import Callable, Optional
 
-from ralph import proc
+from ralph import proc, skill_sync
 from ralph.errors import RalphError
 
-# Agents' commits and pull requests carry no attribution trailer.
-SETTINGS = json.dumps({"attribution": {"commit": "", "pr": ""}})
+# The bundled skills, loaded for each session only and invoked under the `ralph:` namespace.
+PLUGIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin")
+SKILLS = sorted("ralph:" + name for name in skill_sync.BUNDLED)
 
-# Every launch, headless or interactive, gets these.
-COMMON = ["--settings", SETTINGS, "--permission-mode", "auto"]
-HEADLESS = ["--print", "--verbose", "--output-format", "stream-json"]
+HEADLESS = ["--print", "--verbose", "--output-format", "stream-json", "--no-session-persistence"]
+
+# Variables a Claude Code session sets for the commands it runs. When ralph is started from
+# inside such a session, its agents must not take themselves for part of it.
+SESSION_VARIABLES = re.compile(
+    r"CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_(ENTRYPOINT|SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|EXECPATH|MESSAGING_.*)"
+)
+
+# Characters Claude Code reads as glob syntax in claudeMdExcludes.
+GLOB = re.compile(r"([*?\[\]{}()!\\])")
+
+
+def environment(env: Mapping[str, str]) -> dict[str, str]:
+    """The environment every claude process gets: env without the variables of a Claude Code session."""
+    return {k: v for k, v in env.items() if not SESSION_VARIABLES.fullmatch(k)}
+
+
+def settings(project: str) -> str:
+    """The --settings JSON for agents working in the project directory.
+
+    Claude Code counts the instruction files in the directories above the project (~/AGENTS.md,
+    ~/CLAUDE.md, a parent's .claude/rules) as project memory, so --setting-sources does not drop
+    them. They are excluded here, for every ancestor, while the project's own stay.
+    """
+    excludes = []
+    directory = os.path.realpath(project)
+    while directory != os.path.dirname(directory):
+        directory = os.path.dirname(directory)
+        escaped = GLOB.sub(r"\\\1", directory.rstrip("/"))
+        excludes += [escaped + "/*.md", escaped + "/.claude/**"]
+    return json.dumps(
+        {
+            # Agents' commits and pull requests carry no attribution trailer.
+            "attribution": {"commit": "", "pr": ""},
+            "autoMemoryEnabled": False,
+            "claudeMdExcludes": excludes,
+        }
+    )
 
 
 def problems() -> list[str]:
     """What stops Claude Code from being used, if anything."""
     if not proc.on_path("claude"):
         return ["Claude Code (claude) is not on PATH; install it from https://claude.com/claude-code"]
-    if not proc.succeeds(["claude", "auth", "status"]):
+    if not proc.succeeds(["claude", "auth", "status"], env=environment(os.environ)):
         return ["Claude Code (claude) is not logged in; run `claude auth login`"]
     return []
 
@@ -36,15 +81,66 @@ def _texts(event: dict) -> list[str]:
     ]
 
 
+def _init(output: str) -> Optional[dict]:
+    """The init event among a headless run's output lines, if there is one."""
+    for line in output.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "system" and event.get("subtype") == "init":
+            return event
+    return None
+
+
 class Agent:
     def __init__(self, directory: str, flags: Sequence[str] = ()):
         self.directory = directory
+        self.scope = [
+            "--plugin-dir",
+            PLUGIN,
+            "--setting-sources",
+            "project",
+            "--strict-mcp-config",
+            "--permission-mode",
+            "auto",
+            "--settings",
+            settings(directory),
+        ]
         # The project's extra flags, after ralph's own so they can refine them.
         self.flags = list(flags)
 
-    def _command(self, mode: Sequence[str]) -> list[str]:
-        """The claude command line for a launch in mode, without the prompt."""
-        return ["claude"] + list(mode) + COMMON + self.flags
+    def _command(self, mode: Sequence[str], arguments: Sequence[str] = ()) -> list[str]:
+        """The claude command line for a launch in mode, with arguments as its positional arguments.
+
+        The arguments follow `--`, so a project flag that takes several values cannot swallow them.
+        """
+        return ["claude"] + list(mode) + self.scope + self.flags + (["--"] + list(arguments) if arguments else [])
+
+    def check(self) -> None:
+        """Stops unless an agent, launched as every iteration is, resolves the bundled skills at project scope.
+
+        `/context` makes no model call, so the check is free and takes seconds.
+        """
+        found = proc.completed(self._command(HEADLESS, ["/context"]), cwd=self.directory, env=environment(os.environ))
+        init = _init(found.stdout)
+        if found.returncode != 0 or init is None:
+            detail = found.stderr.strip() or found.stdout.strip() or f"exit status {found.returncode}"
+            raise RalphError(
+                f"Claude Code could not start with ralph's launch flags and the project's agent_flags:\n{detail}"
+            )
+        missing = [skill for skill in SKILLS if skill not in (init.get("skills") or [])]
+        if missing:
+            raise RalphError(
+                f"Claude Code cannot resolve the bundled skill{'s' if len(missing) > 1 else ''} {', '.join(missing)} "
+                f"from the plugin at {PLUGIN}; this copy of ralph is incomplete (if the wrapper fetched it, remove "
+                f"{os.path.dirname(PLUGIN)} and rerun to fetch it again), or Claude Code is too old to load plugins"
+            )
+        if "memory_paths" in init:
+            raise RalphError(
+                "Claude Code ignored the settings ralph launches agents with (auto memory is still on), "
+                "so agents would not run at project scope; check that `claude --version` is up to date"
+            )
 
     def interactive(self, prompt: str) -> int:
         """Opens an interactive session on the runner's terminal, starting from prompt. Returns its exit status.
@@ -52,7 +148,9 @@ class Agent:
         Claude Code takes an interactive session's first prompt as an argument; stdin is the terminal.
         """
         try:
-            return subprocess.run(self._command([]) + [prompt], cwd=self.directory).returncode
+            return subprocess.run(
+                self._command([], [prompt]), cwd=self.directory, env=environment(os.environ)
+            ).returncode
         except OSError as e:
             raise RalphError(f"could not start Claude Code: {e}") from e
 
@@ -66,6 +164,7 @@ class Agent:
             agent = subprocess.Popen(
                 self._command(HEADLESS),
                 cwd=self.directory,
+                env=environment(os.environ),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 encoding="utf-8",

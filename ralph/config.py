@@ -80,7 +80,12 @@ KEYS = (
         "Iterations per run, implementing or reviewing, before it stops as not converging.",
         _count,
     ),
-    Key("agent_flags", "", "Extra flags for every Claude Code launch, split as a shell would.", _flags),
+    Key(
+        "agent_flags",
+        "",
+        "Extra flags for every Claude Code launch, after ralph's own, split as a shell would.",
+        _flags,
+    ),
 )
 _BY_NAME = {key.name: key for key in KEYS}
 

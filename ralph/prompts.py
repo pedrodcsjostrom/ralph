@@ -28,12 +28,14 @@ class RunContext:
     rules: Mapping[str, str] = field(default_factory=dict)
 
 
-def _with_rules(run: RunContext, kind: str) -> list[str]:
-    """Ralph's generic instructions for kind, followed by the project's rules for it, if any.
+def _with_rules(run: RunContext, kind: str, invocation: str) -> list[str]:
+    """The bundled skill invocation, ralph's generic instructions for kind and the project's rules for it, if any.
 
-    Project rules only ever add to the generic instructions; the run context always comes after both.
+    The prompt starts with the invocation, so Claude Code runs the bundled skill with the rest of the
+    prompt as its arguments. Project rules only ever add to the generic instructions; the run context
+    always comes after both.
     """
-    lines = [_instructions(kind), ""]
+    lines = [invocation, "", _instructions(kind), ""]
     rules = run.rules.get(kind, "").strip()
     if rules:
         lines += ["## Project rules", "", rules, ""]
@@ -53,7 +55,7 @@ def implement(
     """
     log = "\n".join(f"{c.short} {c.date}\n{c.message}\n---" for c in commits)
     return "\n".join(
-        _with_rules(run, "implement")
+        _with_rules(run, "implement", f"/ralph:implement #{ticket.number}")
         + [
             "## Run context",
             "",
@@ -83,7 +85,7 @@ def implement(
 
 def review(run: RunContext, fixed_point: str, round_: int, findings_file: str, fix_tickets: Sequence[int]) -> str:
     """The prompt for one review round. fix_tickets are those the diff since fixed_point was meant to resolve."""
-    lines = _with_rules(run, "review") + [
+    lines = _with_rules(run, "review", f"/ralph:code-review {fixed_point}") + [
         "## Run context",
         "",
         f"- Spec: #{run.spec} in {run.repo}",

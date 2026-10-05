@@ -12,10 +12,10 @@ def on_path(tool: str) -> bool:
     return shutil.which(tool) is not None
 
 
-def succeeds(args: Sequence[str], cwd: Optional[str] = None) -> bool:
+def succeeds(args: Sequence[str], cwd: Optional[str] = None, env: Optional[Mapping[str, str]] = None) -> bool:
     try:
         proc = subprocess.run(
-            args, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
     except OSError:
         return False

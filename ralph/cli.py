@@ -108,7 +108,9 @@ def _loop(spec: int, console: Console) -> Loop:
     require_tools()
     repo = Checkout(project.root(os.environ))
     config = Config.load(repo.root, os.environ)
-    return Loop(spec, Tracker(repo.root), Agent(repo.root, config.agent_flags), repo, console, config)
+    agent = Agent(repo.root, config.agent_flags)
+    agent.check()
+    return Loop(spec, Tracker(repo.root), agent, repo, console, config)
 
 
 def _run(args: argparse.Namespace, console: Console) -> int:

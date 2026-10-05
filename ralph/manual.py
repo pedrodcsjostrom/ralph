@@ -9,7 +9,7 @@ import argparse
 import textwrap
 from collections.abc import Mapping
 
-from ralph import config, pin, project
+from ralph import agent, config, pin, project
 
 WIDTH = 100
 
@@ -70,6 +70,18 @@ def text(commands: Mapping[str, argparse.ArgumentParser]) -> str:
             f"Text in {project.RULES['implement']} is added to ralph's instructions for every implementing "
             f"iteration, and text in {project.RULES['review']} to those for every review. They add to ralph's "
             "instructions and never replace them; either file may be missing or empty.",
+            "  ",
+        ),
+        "",
+        "Agents",
+        "",
+        _paragraph(
+            "Every agent ralph launches loads ralph's bundled skills (" + ", ".join(agent.SKILLS) + ") for its "
+            "session only and runs at project scope: it sees what the project has checked in, the bundled skills "
+            "and the project rules, but none of your personal Claude Code settings, instructions, memory, skills "
+            "or MCP servers. It still uses your Claude Code login. A run first checks, at no cost, that Claude "
+            "Code resolves the bundled skills. What Claude Code cannot exclude is listed in "
+            "docs/adr/0002-agents-run-at-project-scope-only.md in ralph's repository.",
             "  ",
         ),
         "",

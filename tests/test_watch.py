@@ -1,5 +1,6 @@
 """`ralph watch <spec>`: an interactive session on the ticket an unattended run would implement next."""
 
+import json
 import unittest
 
 from tests.harness import ScenarioTestCase
@@ -32,7 +33,7 @@ class Watch(ScenarioTestCase):
 
         self.assertEqual(result.status, 0, result.output)
         prompt = s.calls("claude")[-1]["prompt"]
-        self.assertTrue(prompt.startswith("# Ralph iteration\n"), prompt)
+        self.assertTrue(prompt.startswith("/ralph:implement #2\n\n# Ralph iteration\n"), prompt)
         self.assertIn("## Project rules\n\nRun `make check` before every commit.\n", prompt)
         self.assertIn(
             "- A human is watching this iteration and will close the ticket: you may ask them questions.\n", prompt
@@ -57,8 +58,8 @@ class Watch(ScenarioTestCase):
 
         args = s.calls("claude")[-1]["args"]
         self.assertEqual(args[args.index("--permission-mode") + 1], "auto")
-        self.assertEqual(args[args.index("--settings") + 1], '{"attribution": {"commit": "", "pr": ""}}')
-        self.assertEqual(args[-3:-1], ["--model", "opus"])
+        self.assertEqual(json.loads(args[args.index("--settings") + 1])["attribution"], {"commit": "", "pr": ""})
+        self.assertEqual(s.calls("claude")[-1]["options"]["--model"], ["opus"])
         self.assertNotIn("--output-format", args)
 
     def test_watch_closes_nothing_and_says_how_to_close_the_ticket(self):
