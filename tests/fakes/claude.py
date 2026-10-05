@@ -14,6 +14,10 @@ invocation, with its arguments and prompt, is appended to
 To add a behaviour, add a function to BEHAVIOURS. It receives the ticket number
 and returns the promise to end the final message with, or None for no promise.
 
+An interactive session (no `--print`) takes its prompt as the last argument,
+acts on the ticket's next behaviour in the same way, and records the call with
+"interactive": true. It prints a line of prose instead of events.
+
 A review (a prompt with a "- Findings file:" line instead of a ticket) acts on
 the entry for its round in "reviews":
 
@@ -112,6 +116,12 @@ def detach(ticket):
     return promise
 
 
+def crash(ticket):
+    """Claude Code itself fails, exiting with status 3."""
+    sys.stderr.write("fake claude: crashed\n")
+    sys.exit(3)
+
+
 def interrupt(ticket):
     """Commits, then interrupts ralph as Ctrl-C on the terminal would (ralph is this process's parent)."""
     commit(ticket)
@@ -120,6 +130,7 @@ def interrupt(ticket):
 
 
 BEHAVIOURS = {
+    "crash": crash,
     "complete": complete,
     "blocked": blocked,
     "no-commit": no_commit,
@@ -221,6 +232,23 @@ def headless(state, args, call):
     emit({"type": "result", "subtype": "success", "result": final})
 
 
+def interactive(state, args, call):
+    if not args or args[-1].startswith("-"):
+        sys.stderr.write("fake claude: expected the prompt as the last argument\n")
+        sys.exit(2)
+    prompt = args[-1]
+    call.update(interactive=True, prompt=prompt)
+    match = re.search(r"^- Ticket: #(\d+)$", prompt, re.M)
+    if not match:
+        sys.stderr.write("fake claude: no ticket in the prompt\n")
+        sys.exit(2)
+    ticket = int(match.group(1))
+    behaviour = next_behaviour(state, ticket)
+    call.update(ticket=ticket, behaviour=behaviour)
+    BEHAVIOURS[behaviour](ticket)
+    print(f"Fake interactive session on ticket #{ticket} ended.")
+
+
 def auth_status(state, args, call):
     logged_in = state.get("logged_in", True)
     print(json.dumps({"loggedIn": logged_in}))
@@ -237,8 +265,7 @@ def main(args):
         elif "--print" in args or "-p" in args:
             headless(state, args, call)
         else:
-            sys.stderr.write("fake claude: unexpected call: {}\n".format(" ".join(args)))
-            sys.exit(2)
+            interactive(state, args, call)
     except SystemExit as exit:
         call["status"] = exit.code
         raise
