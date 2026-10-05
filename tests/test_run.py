@@ -311,7 +311,9 @@ class WhatTheRunnerSees(ScenarioTestCase):
         )
         with open(os.path.join(run, "01-ticket-2.jsonl")) as f:
             events = [json.loads(line) for line in f]
-        self.assertEqual([e["type"] for e in events], ["system", "assistant", "assistant", "user", "assistant", "result"])
+        self.assertEqual(
+            [e["type"] for e in events], ["system", "assistant", "assistant", "user", "assistant", "result"]
+        )
         self.assertEqual(events[2]["message"]["content"][0]["name"], "Bash")
 
     def test_every_run_gets_its_own_run_directory(self):

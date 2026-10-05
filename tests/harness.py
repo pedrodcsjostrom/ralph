@@ -125,6 +125,12 @@ class Scenario:
         tracker["logged_in"] = logged_in
         self._write_state("tracker", tracker)
 
+    def tracker_delays(self, seconds):
+        """Makes every call to the tracker take seconds, as a slow network does."""
+        tracker = self._read_state("tracker")
+        tracker["delay"] = seconds
+        self._write_state("tracker", tracker)
+
     def issue(self, number):
         """The tracker's current view of an issue."""
         return self._read_state("tracker")["issues"][str(number)]
