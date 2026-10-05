@@ -224,7 +224,7 @@ class Help(ScenarioTestCase):
         ):
             self.assertIn("\n  " + synopsis + "\n", commands)
         self.assertIn("\n  ralph sync-skills [<skills-dir>]\n", maintainer)
-        self.assertIn("\n  ralph setup [<directory>]\n", maintainer)
+        self.assertIn("\n  ralph setup [--pin <tag>] [<directory>]\n", maintainer)
         self.assertIn("Moves the project's pin (.ralph/pin) to the newest released ralph version", commands)
         self.assertIn(
             "splits the spec into tickets with the bundled ralph:to-tickets skill", " ".join(commands.split())

@@ -120,11 +120,19 @@ def _parser() -> argparse.ArgumentParser:
         "ready-for-agent label on its GitHub repository, the issue-tracker instructions the bundled skills read "
         "(docs/agents/issue-tracker.md) and a short section about ralph in its CLAUDE.md, or AGENTS.md when only "
         "that exists. The pin is the release the clone is at, the version tag on its HEAD; a project that already "
-        "has a pin keeps it. Running it again repairs what is missing and refreshes what is ralph's, leaving the "
+        "has a pin keeps it. With --pin <tag> the pin is that version instead, even one not yet released, so a "
+        "project can be set up ahead of its release; the wrapper cannot run until the tag is pushed to the repository "
+        "it fetches from. Running it again repairs what is missing and refreshes what is ralph's, leaving the "
         "configuration and project rules as they are. Nothing is committed.",
     )
     setup_.add_argument(
         "directory", metavar="<directory>", nargs="?", default=".", help="a directory of the project to set up"
+    )
+    setup_.add_argument(
+        "--pin",
+        metavar="<tag>",
+        dest="version",
+        help="pin this version instead of the release the clone is at; it may be a tag not yet released",
     )
     setup_.set_defaults(handler=_setup, maintainer=True)
 
@@ -252,7 +260,7 @@ def _sync_skills(args: argparse.Namespace, console: Console) -> int:
 def _setup(args: argparse.Namespace, console: Console) -> int:
     require_tools(checkout, tracker)
     root = Checkout.at(os.path.abspath(args.directory)).root
-    outcome = setup.setup(root, CLONE, Tracker(root, console.progress))
+    outcome = setup.setup(root, CLONE, Tracker(root, console.progress), args.version)
     for note in outcome.notes:
         console.say(note)
     if outcome.changes:

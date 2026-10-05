@@ -255,7 +255,7 @@ class GlobalRalph(ScenarioTestCase):
 
         self.assertEqual(result.status, 0, result.output)
         maintainer = result.output.split("\nMaintainer commands\n")[1]
-        self.assertIn("\n  ralph setup [<directory>]\n", maintainer)
+        self.assertIn("\n  ralph setup [--pin <tag>] [<directory>]\n", maintainer)
         self.assertIn("Sets the git repository holding <directory>", " ".join(maintainer.split()))
         self.assertIn("ln -s <clone>/bin/ralph ~/.local/bin/ralph", " ".join(maintainer.split()))
 
@@ -374,3 +374,59 @@ class SetupAgain(ScenarioTestCase):
         self.assertIn(f"ralph: {s.work}/ralph exists and is not ralph's wrapper", result.output)
         self.assertEqual(s.status(), "")
         self.assertEqual(s.events(), [])
+
+
+class ExplicitPin(ScenarioTestCase):
+    """`setup --pin <tag>`: the maintainer names the pin, as when a project is set up ahead of its release."""
+
+    scenario = Setup.scenario
+
+    def test_an_explicit_pin_to_an_unpublished_tag_is_written_with_a_warning(self):
+        s = self.scenario()
+
+        result = s.setup("--pin", "v0.2.0")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(s.read(".ralph/pin"), "v0.2.0\n")
+        self.assertIn(
+            f"ralph: warning: v0.2.0 is not released in file://{s.clone} yet, so the wrapper cannot run until "
+            "the tag is pushed there",
+            result.output,
+        )
+
+    def test_an_explicit_pin_to_a_released_tag_needs_no_warning_and_runs(self):
+        s = self.scenario()
+        s.release("v0.3.0")
+        s.git_in(s.clone, "commit", "-q", "--allow-empty", "-m", "Work after the release")
+
+        result = s.setup("--pin", "v0.3.0")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertNotIn("warning", result.output)
+        self.assertEqual(s.read(".ralph/pin"), "v0.3.0\n")
+        self.assertEqual(s.wrapper("help").status, 0)
+
+    def test_an_explicit_pin_that_is_not_a_version_name_sets_nothing_up(self):
+        s = self.scenario()
+
+        result = s.setup("--pin", "../v1")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertIn("ralph: --pin needs a version name such as v0.1.0, not '../v1'", result.output)
+        self.assertEqual(s.status(), "")
+        self.assertEqual(s.events(), [])
+
+    def test_an_explicit_pin_never_moves_the_pin_a_project_has(self):
+        s = self.scenario()
+        s.commit_file(".ralph/pin", "v0.1.0\n", "Pin ralph")
+
+        result = s.setup("--pin", "v0.2.0")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertIn(
+            "ralph: the project is pinned to v0.1.0 and set-up never moves a pin; move it with "
+            "`./ralph upgrade v0.2.0`, or rerun without --pin",
+            result.output,
+        )
+        self.assertEqual(s.read(".ralph/pin"), "v0.1.0\n")
+        self.assertEqual(s.status(), "")

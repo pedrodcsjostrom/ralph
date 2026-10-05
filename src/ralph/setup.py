@@ -15,6 +15,10 @@ repairs what is missing or out of date.
 The pin is the release the clone is at: a version tag pointing at the clone's
 HEAD, which must also be in the public repository the wrapper fetches from. A
 project that already has a pin keeps it; `ralph upgrade` is what moves it.
+
+The maintainer may name the pin instead (`--pin`), even a tag not yet pushed to
+the public repository, so a project can be set up ahead of the release it will
+run; set-up then warns that the wrapper cannot run until the tag is published.
 """
 
 import os
@@ -145,13 +149,37 @@ def with_section(text: str, section: str, name: str) -> str:
     return text[:begin] + section + (after[1:] if after.startswith("\n") else after)
 
 
-def setup(root: str, clone: str, tracker: Tracker) -> Outcome:
+def explicit(version: str) -> Optional[str]:
+    """Checks a version the maintainer named to pin, which may not be released yet; a warning when it is not."""
+    if not pin.VERSION.match(version):
+        raise RalphError(f"--pin needs a version name such as v0.1.0, not {version!r}")
+    source = pin.repository()
+    if version in checkout.remote_tags(source):
+        return None
+    return (
+        f"warning: {version} is not released in {source} yet, so the wrapper cannot run until the tag is pushed there"
+    )
+
+
+def setup(root: str, clone: str, tracker: Tracker, version: Optional[str] = None) -> Outcome:
     """Sets the git repository at root up as a project, from the ralph clone at clone. tracker talks to the
-    project's GitHub repository. Checks everything it can before it changes anything."""
+    project's GitHub repository. version, when given, is the pin, released or not; otherwise the pin is the release
+    the clone is at. Checks everything it can before it changes anything."""
     files = _Files(root, Outcome(""))
     _check_wrapper_slot(files)
     existing_pin = files.text(pin.PIN)
-    files.outcome.version = existing_pin.strip() if existing_pin else release(clone)
+    if version is not None:
+        warning = explicit(version)
+        if existing_pin and existing_pin.strip() != version:
+            raise RalphError(
+                f"the project is pinned to {existing_pin.strip()} and set-up never moves a pin; move it with "
+                f"`./ralph upgrade {version}`, or rerun without --pin"
+            )
+        if warning:
+            files.outcome.notes.append(warning)
+        files.outcome.version = version
+    else:
+        files.outcome.version = existing_pin.strip() if existing_pin else release(clone)
     instructions = _instructions_file(files)
     agent_instructions = with_section(files.text(instructions) or "", _template("agent-instructions.md"), instructions)
 
