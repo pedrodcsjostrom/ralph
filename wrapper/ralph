@@ -10,6 +10,9 @@ Nothing needs installing beyond Python 3.9 and git.
 Kept to syntax any Python 3 can parse, so an old interpreter gets a clear
 message instead of a syntax error, and to the standard library only.
 
+It tells ralph which project to act on by setting RALPH_PROJECT to the
+directory it lives in, so a command acts on this project wherever it is run.
+
 Environment:
   RALPH_REPOSITORY  where versions are fetched from (default: the public repository)
   RALPH_CACHE       the per-user cache of fetched versions
@@ -44,6 +47,7 @@ def main(args):
         raise Failure(
             "the cached ralph %s at %s has no bin/ralph; delete that directory to fetch it again" % (version, path)
         )
+    os.environ["RALPH_PROJECT"] = project
     os.execv(sys.executable, [sys.executable, entry] + args)
 
 

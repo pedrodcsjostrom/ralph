@@ -114,6 +114,23 @@ class UpgradeTest(unittest.TestCase):
         self.assertEqual(w.pinned(), "v0.10.0\n")
         self.assertFalse(os.path.exists(os.path.join(subdir, ".ralph")))
 
+    def test_upgrade_run_from_another_repository_moves_the_wrappers_projects_pin(self):
+        w = self.world()
+        w.release("v0.2.0", "v0.10.0")
+        w.pin("v0.2.0")
+        elsewhere = os.path.join(w.root, "elsewhere")
+        os.makedirs(os.path.join(elsewhere, ".ralph"))
+        w.git(elsewhere, "init", "-q")
+        with open(os.path.join(elsewhere, ".ralph", "pin"), "w") as f:
+            f.write("v0.2.0\n")
+
+        result = w.wrapper("upgrade", cwd=elsewhere)
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(w.pinned(), "v0.10.0\n")
+        with open(os.path.join(elsewhere, ".ralph", "pin")) as f:
+            self.assertEqual(f.read(), "v0.2.0\n")
+
     def test_upgrade_fails_and_leaves_the_pin_when_the_repository_cannot_be_reached(self):
         w = self.world()
         w.release("v0.2.0", "v0.10.0")
