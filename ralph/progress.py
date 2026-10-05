@@ -26,6 +26,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Callable, Optional, TextIO
@@ -77,6 +78,26 @@ def one_line(text: str, width: int = ACTIVITY_WIDTH) -> str:
     """text on one line, free of control characters, cut to width."""
     text = " ".join(_CONTROL.sub(" ", text).split())
     return text if len(text) <= width else text[: width - 3] + "..."
+
+
+def _cells(char: str) -> int:
+    """How many terminal columns char takes."""
+    if unicodedata.combining(char):
+        return 0
+    return 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+
+
+def fit(text: str, columns: int) -> str:
+    """text cut to at most columns terminal columns, ending in "..." when it is cut."""
+    if sum(_cells(c) for c in text) <= columns:
+        return text
+    room, kept = max(columns - 3, 0), []
+    for char in text:
+        room -= _cells(char)
+        if room < 0:
+            break
+        kept.append(char)
+    return "".join(kept) + "..."[: max(columns, 0)]
 
 
 def is_terminal(stream: TextIO, env: Mapping[str, str]) -> bool:
@@ -197,12 +218,12 @@ class Progress:
 
     def _draw(self) -> None:
         text = f"{self._spinner[self._frame % len(self._spinner)]} {self.line()}"
-        # A line wider than the terminal would wrap, and redrawing it in place would then leave its head behind.
-        width = self._width()
-        if len(text) > width - 1:
-            text = text[: max(width - 4, 1)] + "..."
-        # The cursor would blink at the end of the line; it is hidden while the indicator is up.
-        self._write(("" if self._cursor_hidden else HIDE_CURSOR) + ERASE + text)
+        # A line as wide as the terminal or wider would wrap, and redrawing it in place would leave its head behind.
+        text = fit(text, self._width() - 1)
+        # The cursor is hidden while the indicator is up, and parked at the start of its line, so whatever the
+        # terminal echoes (^C when the runner interrupts) lands on the indicator rather than after it, where it
+        # could wrap onto a line of its own.
+        self._write(("" if self._cursor_hidden else HIDE_CURSOR) + ERASE + text + "\r")
         self._drawn = self._cursor_hidden = True
 
     def _erase(self, show_cursor: bool = True) -> None:

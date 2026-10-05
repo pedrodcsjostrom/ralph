@@ -24,6 +24,8 @@ import sys
 import tempfile
 import unittest
 
+from tests import terminal
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RALPH = os.path.join(ROOT, "bin", "ralph")
 FAKES = os.path.join(ROOT, "tests", "fakes")
@@ -255,6 +257,16 @@ class Scenario:
             timeout=120,
         )
         return Result(proc.returncode, proc.stdout)
+
+    def ralph_on_terminal(self, *args, columns=terminal.COLUMNS, interrupt_when=None, **env):
+        """Runs ralph on a pseudo-terminal (see tests/terminal.py), typing Ctrl-C once interrupt_when shows."""
+        return terminal.run(
+            [sys.executable, RALPH, *args],
+            cwd=self.work,
+            env=self.env(TERM="xterm-256color", **env),
+            columns=columns,
+            interrupt_when=interrupt_when,
+        )
 
 
 class ScenarioTestCase(unittest.TestCase):

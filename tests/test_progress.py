@@ -75,5 +75,47 @@ class PlainProgress(ScenarioTestCase):
         self.assertEqual(progress_lines(result.output), [])
 
 
+# What only the indicator writes: its spinner and how it names an iteration.
+INDICATOR = re.compile(r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]|iteration \d+/\d+|GitHub: ")
+
+
+class TerminalIndicator(ScenarioTestCase):
+    def assertNothingLeftBehind(self, result):
+        self.assertIn("\x1b[?25l", result.raw, "the indicator was never drawn")
+        self.assertIn("iteration 1/30, ticket #2, attempt 1/2", result.raw, "the indicator was never drawn")
+        left = [line for line in result.screen.lines() if INDICATOR.search(line)]
+        self.assertEqual(left, [], result)
+        self.assertTrue(result.screen.cursor_visible, result)
+
+    def test_prose_scrolls_above_the_indicator_and_nothing_of_it_is_left_after_the_run(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_pauses(0.6)
+
+        result = s.ralph_on_terminal("run", "1", columns=200)
+
+        self.assertEqual(result.status, 0, result)
+        lines = result.screen.lines()
+        self.assertIn("Working on ticket #2.", lines)
+        self.assertIn("Fake agent finished ticket #2. <promise>TICKET COMPLETE</promise>", lines)
+        self.assertIn("ralph: closed #2", lines)
+        self.assertEqual(lines[-2:], ["ralph: nothing was pushed. Look it over, then open the pull request.", ""])
+        self.assertNothingLeftBehind(result)
+
+    def test_an_interrupt_takes_the_indicator_away_and_leaves_the_cursor_visible(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_pauses(30)
+
+        # On a narrow terminal the indicator must be cut short: one that wraps leaves its head behind when redrawn.
+        result = s.ralph_on_terminal("run", "1", columns=60, interrupt_when="Bash: Run")
+
+        self.assertEqual(result.status, 130, result)
+        lines = result.screen.lines()
+        self.assertIn("Working on ticket #2.", lines)
+        self.assertEqual(lines[-2:], ["ralph: interrupted", ""])
+        self.assertNothingLeftBehind(result)
+
+
 if __name__ == "__main__":
     unittest.main()
