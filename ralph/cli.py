@@ -5,7 +5,7 @@ import os
 import sys
 from typing import Optional
 
-from ralph import agent, checkout, tracker
+from ralph import agent, checkout, skill_sync, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.console import Console
@@ -29,6 +29,23 @@ def _parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="implement a spec's tickets unattended")
     run.add_argument("spec", type=_issue_number, help="the spec's issue number")
     run.set_defaults(handler=_run)
+
+    sync = commands.add_parser(
+        "sync-skills",
+        help="(maintainer) regenerate the bundled skills from a local skills directory",
+        description="Maintainer only, run from a clone of ralph. Overwrites the bundled skills in this clone's "
+        "plugin/ directory with copies of " + ", ".join(skill_sync.BUNDLED) + " from the skills directory, "
+        "repointing references between them to their ralph: names, recording where each came from and carrying "
+        "the upstream license notice. References to skills that are not bundled are reported. Review the result "
+        "as a diff; never edit the bundled skills by hand.",
+    )
+    sync.add_argument(
+        "skills",
+        nargs="?",
+        default="~/.claude/skills",
+        help="the skills directory to copy from (default: ~/.claude/skills)",
+    )
+    sync.set_defaults(handler=_sync_skills)
     return parser
 
 
@@ -43,6 +60,18 @@ def _run(args: argparse.Namespace, console: Console) -> int:
     require_tools()
     repo = Checkout.at(os.getcwd())
     Loop(args.spec, Tracker(repo.root), Agent(repo.root), repo, console).run()
+    return 0
+
+
+def _sync_skills(args: argparse.Namespace, console: Console) -> int:
+    plugin = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin")
+    unbundled = skill_sync.sync(args.skills, plugin)
+    console.say(f"bundled {', '.join(skill_sync.BUNDLED)} into {plugin}")
+    if unbundled:
+        console.say(
+            "bundled skills refer to skills that are not bundled:\n"
+            + "\n".join(f"  {path}: {reference}" for path, reference in unbundled)
+        )
     return 0
 
 
