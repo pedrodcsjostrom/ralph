@@ -49,7 +49,9 @@ class Watch(ScenarioTestCase):
 
         self.assertNotIn("A human is watching", s.prompts()[0])
 
-    def test_the_session_is_launched_like_an_unattended_iteration_with_the_projects_flags(self):
+    def test_the_session_is_launched_like_an_unattended_iteration_with_the_projects_flags_but_asks_before_commands(
+        self,
+    ):
         s = self.scenario()
         s.ticket(2)
         s.commit_file(".ralph/config", "agent_flags = --model opus\n", "Configure ralph")
@@ -57,7 +59,8 @@ class Watch(ScenarioTestCase):
         s.ralph("watch", "1")
 
         args = s.calls("claude")[-1]["args"]
-        self.assertEqual(args[args.index("--permission-mode") + 1], "auto")
+        # A human is present, so the session accepts edits and asks before anything else, as the shell's once.sh did.
+        self.assertEqual(s.calls("claude")[-1]["options"]["--permission-mode"], ["acceptEdits"])
         self.assertEqual(json.loads(args[args.index("--settings") + 1])["attribution"], {"commit": "", "pr": ""})
         self.assertEqual(s.calls("claude")[-1]["options"]["--model"], ["opus"])
         self.assertNotIn("--output-format", args)

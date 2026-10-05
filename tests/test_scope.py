@@ -34,7 +34,6 @@ class ProjectScope(ScenarioTestCase):
         self.assertEqual(option(args, "--plugin-dir"), PLUGIN)
         self.assertEqual(option(args, "--setting-sources"), "project")
         self.assertIn("--strict-mcp-config", args)
-        self.assertEqual(option(args, "--permission-mode"), "auto")
         settings = json.loads(option(args, "--settings"))
         self.assertIs(settings["autoMemoryEnabled"], False)
         self.assertEqual(settings["attribution"], {"commit": "", "pr": ""})
@@ -61,6 +60,7 @@ class ProjectScope(ScenarioTestCase):
             self.assert_project_scope(s, args)
             self.assertIn("--print", args)
             self.assertIn("--no-session-persistence", args)
+            self.assertEqual(option(args, "--permission-mode"), "auto")
 
     def test_a_watched_session_loads_the_plugin_for_the_session_only_at_project_scope(self):
         s = self.scenario()
@@ -72,6 +72,7 @@ class ProjectScope(ScenarioTestCase):
         [session] = launches(s)
         self.assert_project_scope(s, session)
         self.assertNotIn("--print", session)
+        self.assertEqual(option(session, "--permission-mode"), "acceptEdits")
 
     def test_agents_do_not_inherit_the_claude_code_session_ralph_was_started_from(self):
         s = self.scenario()

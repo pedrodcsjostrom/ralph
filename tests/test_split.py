@@ -22,6 +22,8 @@ class Split(ScenarioTestCase):
         self.assertEqual(session["options"]["--plugin-dir"], [PLUGIN])
         self.assertEqual(session["options"]["--setting-sources"], ["project"])
         self.assertTrue(session["options"]["--strict-mcp-config"])
+        # A human is present to approve commands, as in a watched iteration.
+        self.assertEqual(session["options"]["--permission-mode"], ["acceptEdits"])
         self.assertEqual(s.events(), ["split #1"])
 
     def test_the_prompt_makes_the_ticket_contract_explicit(self):

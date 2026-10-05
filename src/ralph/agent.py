@@ -22,7 +22,18 @@ from ralph.errors import RalphError
 PLUGIN = os.path.join(CLONE, "plugin")
 SKILLS = sorted("ralph:" + name for name in skill_sync.BUNDLED)
 
-HEADLESS = ["--print", "--verbose", "--output-format", "stream-json", "--no-session-persistence"]
+# Nobody is there to approve a headless iteration's commands, so Claude Code's classifier does.
+HEADLESS = [
+    "--print",
+    "--verbose",
+    "--output-format",
+    "stream-json",
+    "--no-session-persistence",
+    "--permission-mode",
+    "auto",
+]
+# An interactive session has a human present: it accepts edits and asks before anything else.
+INTERACTIVE = ["--permission-mode", "acceptEdits"]
 
 # Variables a Claude Code session sets for the commands it runs. When ralph is started from
 # inside such a session, its agents must not take themselves for part of it.
@@ -138,8 +149,6 @@ class Agent:
             "--setting-sources",
             "project",
             "--strict-mcp-config",
-            "--permission-mode",
-            "auto",
             "--settings",
             settings(directory),
         ]
@@ -185,7 +194,7 @@ class Agent:
         """
         try:
             return subprocess.run(
-                self._command([], [prompt]), cwd=self.directory, env=environment(os.environ)
+                self._command(INTERACTIVE, [prompt]), cwd=self.directory, env=environment(os.environ)
             ).returncode
         except OSError as e:
             raise RalphError(f"could not start Claude Code: {e}") from e
