@@ -112,10 +112,12 @@ class Loop:
         # The whole spec lands on one integration branch and main never gets a
         # commit. Started from any other branch, that branch is the integration branch.
         main = self.config.main_branch
-        run_base = self._run_base(main)
+        configured_base = self._configured_run_base()
         if branch == main:
             branch = integration_branch(self.spec, title)
             self.checkout.switch(branch)
+        # Taken on the integration branch: a rerun from main after main moved on keeps the branch's own run base.
+        run_base = configured_base or self.checkout.merge_base("HEAD", main)
         context = prompts.RunContext(
             spec=self.spec,
             repo=self.tracker.repo,
@@ -124,10 +126,10 @@ class Loop:
         )
         return _Start(branch, run_base, context)
 
-    def _run_base(self, main: str) -> str:
-        """The configured run base, or else the merge base of HEAD with the main branch."""
+    def _configured_run_base(self) -> Optional[str]:
+        """The configured run base, resolved to a full sha, or None when the run base is the merge base."""
         if self.config.run_base is None:
-            return self.checkout.merge_base("HEAD", main)
+            return None
         base = self.checkout.resolve(self.config.run_base)
         if base is None:
             raise RalphError(f"the run base {self.config.run_base!r} (run_base) is not a commit in this repository")

@@ -289,6 +289,25 @@ class Rerun(ScenarioTestCase):
         self.assertEqual(s.status(), "")
         self.assertEqual(s.git("status", "--porcelain", "--ignored"), "!! .ralph/")
 
+    def test_a_rerun_from_main_after_main_moved_on_reviews_against_the_integration_branchs_run_base(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.ticket(3)
+        s.agent_does(3, "blocked")
+        first = s.ralph("run", "1", RALPH_MAX_ATTEMPTS="1")
+        self.assertEqual(first.status, 1, first.output)
+        run_base = s.git("rev-parse", "main")
+        s.git("switch", "-q", "main")
+        s.commit_file("NEWS.md", "Widgets are faster.\n", "Speed widgets up")
+        s.agent_does(3, "complete")
+
+        second = s.ralph("run", "1")
+
+        self.assertEqual(second.status, 0, second.output)
+        self.assertEqual(s.branch(), "spec/1-spec-widget-sorting")
+        review = s.prompts()[-1]
+        self.assertIn(f"- Fixed point, the commit to review the work against: {run_base}\n", review)
+
 
 class WhatTheRunnerSees(ScenarioTestCase):
     def test_the_agents_prose_streams_to_the_terminal(self):
