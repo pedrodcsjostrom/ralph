@@ -115,6 +115,25 @@ class Tracker:
     def comment(self, number: int, body: str) -> None:
         self._gh("issue", "comment", str(number), "--repo", self.repo, "--body", body)
 
+    def open_pull_request(self, base: str, head: str, title: str, body: str) -> str:
+        """Opens a pull request of the pushed branch head into base and returns its URL."""
+        out = self._gh(
+            "pr",
+            "create",
+            "--repo",
+            self.repo,
+            "--base",
+            base,
+            "--head",
+            head,
+            "--title",
+            title,
+            "--body-file",
+            "-",
+            input=body,
+        )
+        return out.strip().splitlines()[-1]
+
     def create_ticket(self, spec: int, title: str, body: str, labels: Sequence[str]) -> int:
         """Opens a new ticket as a sub-issue of spec and returns its number."""
         fields = json.dumps({"title": title, "body": body, "labels": list(labels)})

@@ -17,6 +17,7 @@ call's record, which is how tests observe mutations.
 import json
 import os
 import re
+import subprocess
 import sys
 
 FAKE = os.environ["RALPH_FAKE"]
@@ -132,6 +133,23 @@ def issue_comment(state, args):
     return {"mutation": "comment", "ticket": number, "body": body}
 
 
+def pr_create(state, args):
+    """`gh pr create --repo R --base B --head H --title T --body-file -`. Like gh, it wants the head pushed first."""
+    head, base = option(args, "--head"), option(args, "--base")
+    if option(args, "--repo") != state["repo"] or None in (head, base) or option(args, "--body-file") != "-":
+        unexpected(args)
+    pushed = subprocess.run(["git", "ls-remote", "--exit-code", "--heads", "origin", head], stdout=subprocess.DEVNULL)
+    if pushed.returncode != 0:
+        fail("aborted: you must first push the current branch to a remote, or use the --head flag")
+    pulls = state.setdefault("pull_requests", [])
+    number = max([int(n) for n in state["issues"]] + [p["number"] for p in pulls]) + 1
+    pull = {"number": number, "base": base, "head": head, "title": option(args, "--title"), "body": sys.stdin.read()}
+    pulls.append(pull)
+    save(state)
+    print("https://github.com/{}/pull/{}".format(state["repo"], number))
+    return {"mutation": "pull request", "ticket": number, "pull": pull}
+
+
 def create_issue(state, args):
     """`gh api repos/<repo>/issues --method POST --input -`: the new issue's fields come in on stdin."""
     fields = json.load(sys.stdin)
@@ -205,6 +223,7 @@ HANDLERS = {
     ("issue", "view"): issue_view,
     ("issue", "close"): issue_close,
     ("issue", "comment"): issue_comment,
+    ("pr", "create"): pr_create,
     ("api",): api,
 }
 

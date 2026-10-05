@@ -214,10 +214,11 @@ class Help(ScenarioTestCase):
 
         self.assertEqual(result.status, 0, result.output)
         commands, maintainer = result.output.split("\nMaintainer commands\n")
-        for synopsis in ("ralph run <spec>", "ralph upgrade [<version>]", "ralph help"):
+        for synopsis in ("ralph run <spec>", "ralph publish [--force]", "ralph upgrade [<version>]", "ralph help"):
             self.assertIn("\n  " + synopsis + "\n", commands)
         self.assertIn("\n  ralph sync-skills [<skills-dir>]\n", maintainer)
         self.assertIn("Moves the project's pin (.ralph/pin) to the newest released ralph version", commands)
+        self.assertIn("did not end cleanly; --force publishes it anyway.", " ".join(commands.split()))
 
     def test_help_lists_every_configuration_key_with_its_environment_variable_and_default(self):
         s = self.scenario()

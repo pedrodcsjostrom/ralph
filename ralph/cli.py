@@ -4,15 +4,17 @@ import argparse
 import os
 import sys
 from collections.abc import Mapping
+from types import ModuleType
 from typing import Optional
 
-from ralph import agent, checkout, manual, pin, project, skill_sync, tracker
+from ralph import agent, checkout, draft, manual, pin, project, runs, skill_sync, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
 from ralph.console import Console
 from ralph.errors import RalphError, Reported
 from ralph.loop import Loop
+from ralph.record import RunRecord
 from ralph.tracker import Tracker
 
 
@@ -43,6 +45,19 @@ def _parser() -> argparse.ArgumentParser:
     )
     run.add_argument("spec", metavar="<spec>", type=_issue_number, help="the spec's issue number")
     run.set_defaults(handler=_run)
+
+    publish = commands.add_parser(
+        "publish",
+        help="push the integration branch and open the pull request",
+        description="Pushes the latest run's integration branch to origin and opens a pull request from it against "
+        "the main branch, titled after the spec, with the run's pull request draft as its body. The only command "
+        "that takes work off this machine. "
+        "Refuses when the latest run did not end cleanly; --force publishes it anyway.",
+    )
+    publish.add_argument(
+        "--force", action="store_true", help="publish the latest run even though it did not end cleanly"
+    )
+    publish.set_defaults(handler=_publish)
 
     upgrade = commands.add_parser(
         "upgrade",
@@ -85,18 +100,50 @@ def _help(commands: Mapping[str, argparse.ArgumentParser], console: Console) -> 
     return 0
 
 
-def require_tools() -> None:
-    """Stops with every required tool that is missing or not logged in."""
-    found = checkout.problems() + tracker.problems() + agent.problems()
+def require_tools(*tools: ModuleType) -> None:
+    """Stops with every one of tools (checkout, tracker, agent) that is missing or not logged in."""
+    found = [problem for tool in tools for problem in tool.problems()]
     if found:
         raise RalphError("cannot start:\n" + "\n".join("  - " + p for p in found))
 
 
 def _run(args: argparse.Namespace, console: Console) -> int:
-    require_tools()
+    require_tools(checkout, tracker, agent)
     repo = Checkout(project.root(os.environ))
     config = Config.load(repo.root, os.environ)
     Loop(args.spec, Tracker(repo.root), Agent(repo.root, config.agent_flags), repo, console, config).run()
+    return 0
+
+
+def _publish(args: argparse.Namespace, console: Console) -> int:
+    require_tools(checkout, tracker)
+    repo = Checkout(project.root(os.environ))
+    config = Config.load(repo.root, os.environ)
+    run = runs.latest(repo.root)
+    if run is None:
+        raise RalphError("there is no run to publish in this project; start one with `ralph run <spec>`")
+    path = os.path.join(run, draft.FILE)
+    if not os.path.isfile(path):
+        raise RalphError(f"the latest run, {run}, left no pull request draft to publish ({path} is missing)")
+    try:
+        record = RunRecord.load(run)
+    except (OSError, ValueError) as e:
+        raise RalphError(f"the latest run, {run}, left no readable record of how it ended: {e}") from e
+    if not record.ended_cleanly and not args.force:
+        reason = record.reason or "it never finished"
+        raise RalphError(
+            f"the latest run, {run}, did not end cleanly, so it is not published:\n"
+            + "\n".join(("  " + line).rstrip() for line in reason.splitlines())
+            + "\nrerun to finish the spec, or publish it as it is with `ralph publish --force`"
+        )
+    with open(path, encoding="utf-8") as f:
+        body = f.read()
+    tracker_ = Tracker(repo.root)
+    title = tracker_.spec_title(record.spec)
+    repo.push(record.branch)
+    console.say(f"pushed {record.branch}")
+    url = tracker_.open_pull_request(config.main_branch, record.branch, title, body)
+    console.say(f"opened the pull request {url}")
     return 0
 
 

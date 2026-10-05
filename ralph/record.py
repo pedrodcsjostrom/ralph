@@ -69,6 +69,18 @@ class RunRecord:
         self.tickets.append(record)
         return record
 
+    @classmethod
+    def load(cls, run_dir: str) -> "RunRecord":
+        """The record a run kept in run_dir. Raises OSError or ValueError when it is missing or unreadable."""
+        with open(os.path.join(run_dir, FILE), encoding="utf-8") as f:
+            fields = json.load(f)
+        try:
+            tickets = [TicketRecord(**t) for t in fields.pop("tickets")]
+            rounds = [ReviewRoundRecord(**r) for r in fields.pop("review_rounds")]
+            return cls(**fields, tickets=tickets, review_rounds=rounds)
+        except (KeyError, TypeError) as e:
+            raise ValueError(f"{FILE} is not a run record: {e}") from e
+
     def save(self, run_dir: str) -> None:
         path = os.path.join(run_dir, FILE)
         with open(path + ".tmp", "w", encoding="utf-8") as f:
