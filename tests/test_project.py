@@ -251,6 +251,15 @@ class Help(ScenarioTestCase):
         for text in (".ralph/config", ".ralph/rules/implement.md", ".ralph/rules/review.md", "RALPH_REPOSITORY"):
             self.assertIn(text, result.output)
 
+    def test_help_says_agents_run_at_project_scope_and_where_the_limits_are(self):
+        s = self.scenario()
+
+        result = s.ralph("help")
+
+        agents = result.output[result.output.index("\nAgents\n") :]
+        self.assertIn("ralph:implement", agents)
+        self.assertIn("docs/adr/0002-agents-run-at-project-scope-only.md", agents)
+
     def test_help_needs_no_project(self):
         s = self.scenario()
         s.remove_tool("git")

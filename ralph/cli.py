@@ -123,7 +123,10 @@ def _loop(spec: int, console: Console) -> Loop:
     require_tools(checkout, tracker, agent)
     repo = Checkout(project.root(os.environ))
     config = Config.load(repo.root, os.environ)
-    return Loop(spec, Tracker(repo.root, console.progress), Agent(repo.root, config.agent_flags), repo, console, config)
+    claude = Agent(repo.root, config.agent_flags)
+    with console.progress.waiting("Claude Code: checking it resolves the bundled skills"):
+        claude.check()
+    return Loop(spec, Tracker(repo.root, console.progress), claude, repo, console, config)
 
 
 def _run(args: argparse.Namespace, console: Console) -> int:

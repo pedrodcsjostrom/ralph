@@ -5,6 +5,10 @@ test. Its state lives in `$RALPH_FAKE/agent.json`:
 
     {"logged_in": true, "behaviours": {"3": ["blocked", "complete"]}}
 
+The command line is parsed as the real CLI parses it (see parse): unknown
+options are rejected, and an option taking several values swallows the
+arguments after it up to the next option or `--`.
+
 A headless run (`--print`) reads its prompt from stdin, finds the ticket in the
 run context, and acts on the next behaviour queued for that ticket. The last
 behaviour in a queue repeats; a ticket with no queue gets "complete". Every
@@ -20,6 +24,12 @@ announcing its tool call, as a real agent does while a long command runs.
 An interactive session (no `--print`) takes its prompt as the last argument,
 acts on the ticket's next behaviour in the same way, and records the call with
 "interactive": true. It prints a line of prose instead of events.
+
+A headless `/context` prompt, given as an argument, is the start-up check: it
+emits the init event a real CLI would for the plugins given with --plugin-dir,
+and makes no change. With "ignores_settings": true in the state, the init event
+reports auto memory on whatever --settings says, as a CLI that silently drops
+settings it cannot validate does.
 
 A review (a prompt with a "- Findings file:" line instead of a ticket) acts on
 the entry for its round in "reviews":
@@ -195,14 +205,101 @@ def next_behaviour(state, ticket):
     return queue[0]
 
 
+# The options the fake understands, by how many values they take.
+FLAGS = {"--print", "-p", "--verbose", "--strict-mcp-config", "--no-session-persistence"}
+SINGLE = {
+    "--output-format",
+    "--settings",
+    "--permission-mode",
+    "--plugin-dir",
+    "--setting-sources",
+    "--model",
+    "--append-system-prompt",
+}
+VARIADIC = {"--allowedTools", "--disallowedTools", "--add-dir", "--tools"}
+
+
+def parse(args):
+    """The options and positional arguments of a command line, as the real CLI reads them.
+
+    Single-value options may repeat (each value is kept); an option taking several values
+    takes every following argument up to the next option or `--`.
+    """
+    options, positionals = {}, []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--":
+            positionals += args[i:]
+            break
+        if not arg.startswith("-"):
+            positionals.append(arg)
+        elif arg in FLAGS:
+            options[arg] = True
+        elif arg in SINGLE:
+            if i >= len(args):
+                fail(f"error: option '{arg}' argument missing")
+            options.setdefault(arg, []).append(args[i])
+            i += 1
+        elif arg in VARIADIC:
+            values = options.setdefault(arg, [])
+            while i < len(args) and not args[i].startswith("-"):
+                values.append(args[i])
+                i += 1
+        else:
+            fail(f"error: unknown option '{arg}'")
+    return options, positionals
+
+
+def fail(message):
+    sys.stderr.write(message + "\n")
+    sys.exit(1)
+
+
+def context(state, options, call):
+    """The start-up check: the init event for the plugins and settings given, as `/context` makes no model call."""
+    call["context"] = True
+    skills, plugins = ["code-review", "simplify"], []
+    for directory in options.get("--plugin-dir", []):
+        # The real CLI silently ignores a plugin directory it cannot load.
+        try:
+            with open(os.path.join(directory, ".claude-plugin", "plugin.json")) as f:
+                name = json.load(f)["name"]
+        except (OSError, ValueError, KeyError):
+            continue
+        plugins.append({"name": name, "path": directory, "source": f"{name}@inline"})
+        found = os.path.join(directory, "skills")
+        for skill in sorted(os.listdir(found)) if os.path.isdir(found) else []:
+            if os.path.isfile(os.path.join(found, skill, "SKILL.md")):
+                skills.append(f"{name}:{skill}")
+    init = {"type": "system", "subtype": "init", "session_id": "fake", "skills": skills, "plugins": plugins}
+    settings = {}
+    for text in options.get("--settings", []):
+        try:
+            settings.update(json.loads(text))
+        except ValueError:
+            pass
+    if state.get("ignores_settings") or settings.get("autoMemoryEnabled") is not False:
+        init["memory_paths"] = {"auto": os.path.join(os.environ["HOME"], ".claude", "projects", "memory")}
+    emit(init)
+    emit({"type": "result", "subtype": "success", "result": "## Context Usage", "total_cost_usd": 0})
+
+
 def emit(event):
     sys.stdout.write(json.dumps(event) + "\n")
     sys.stdout.flush()
 
 
-def headless(state, args, call):
-    if "--output-format" not in args or args[args.index("--output-format") + 1] != "stream-json":
-        sys.stderr.write("fake claude: expected --output-format stream-json\n")
+def headless(state, options, positionals, call):
+    if options.get("--output-format") != ["stream-json"] or "--verbose" not in options:
+        sys.stderr.write("fake claude: expected --output-format stream-json --verbose\n")
+        sys.exit(2)
+    if positionals == ["/context"]:
+        context(state, options, call)
+        return
+    if positionals:
+        sys.stderr.write(f"fake claude: expected the prompt on stdin, not as arguments {positionals}\n")
         sys.exit(2)
     prompt = sys.stdin.read()
     call["prompt"] = prompt
@@ -248,11 +345,11 @@ def headless(state, args, call):
     emit({"type": "result", "subtype": "success", "result": final})
 
 
-def interactive(state, args, call):
-    if not args or args[-1].startswith("-"):
-        sys.stderr.write("fake claude: expected the prompt as the last argument\n")
+def interactive(state, positionals, call):
+    if len(positionals) != 1:
+        sys.stderr.write(f"fake claude: expected the prompt as the only argument, got {positionals}\n")
         sys.exit(2)
-    prompt = args[-1]
+    prompt = positionals[0]
     call.update(interactive=True, prompt=prompt)
     match = re.search(r"^- Ticket: #(\d+)$", prompt, re.M)
     if not match:
@@ -275,15 +372,20 @@ def auth_status(state, args, call):
 def main(args):
     # Interrupted, it stops quietly, as the real CLI does.
     signal.signal(signal.SIGINT, lambda *_: sys.exit(130))
-    call = {"tool": "claude", "args": args}
+    # What the agent inherits of a Claude Code session ralph itself runs in.
+    inherited = {k: v for k, v in os.environ.items() if k == "CLAUDECODE" or k.startswith("CLAUDE_CODE_")}
+    call = {"tool": "claude", "args": args, "env": inherited}
     try:
         state = load()
         if args[:2] == ["auth", "status"]:
             auth_status(state, args, call)
-        elif "--print" in args or "-p" in args:
-            headless(state, args, call)
+            return
+        options, positionals = parse(args)
+        call["options"] = options
+        if "--print" in options or "-p" in options:
+            headless(state, options, positionals, call)
         else:
-            interactive(state, args, call)
+            interactive(state, positionals, call)
     except SystemExit as exit:
         call["status"] = exit.code
         raise

@@ -47,6 +47,7 @@ class Result:
 class Scenario:
     def __init__(self, root):
         self.root = root
+        self.entry_point = RALPH
         self.work = os.path.join(root, "repo")
         self.fake = os.path.join(root, "fake")
         self.bin = os.path.join(root, "bin")
@@ -166,6 +167,12 @@ class Scenario:
         agent.setdefault("reviews", {})[str(round_)] = {"findings": text, "also": also}
         self._write_state("agent", agent)
 
+    def agent_ignores_settings(self):
+        """The agent's CLI silently drops the settings it is launched with, as Claude Code does with invalid ones."""
+        agent = self._read_state("agent")
+        agent["ignores_settings"] = True
+        self._write_state("agent", agent)
+
     def agent_logged_in(self, logged_in):
         agent = self._read_state("agent")
         agent["logged_in"] = logged_in
@@ -280,9 +287,19 @@ class Scenario:
 
     # Ralph.
 
+    def use_ralph_copy(self):
+        """Runs a scratch copy of ralph from now on, so a test can break it. Returns the copy's plugin directory."""
+        copy = os.path.join(self.root, "ralph")
+        for part in ("bin", "ralph", "plugin"):
+            shutil.copytree(
+                os.path.join(ROOT, part), os.path.join(copy, part), ignore=shutil.ignore_patterns("__pycache__")
+            )
+        self.entry_point = os.path.join(copy, "bin", "ralph")
+        return os.path.join(copy, "plugin")
+
     def ralph(self, *args, **env):
         proc = subprocess.run(
-            (sys.executable, RALPH) + args,
+            (sys.executable, self.entry_point) + args,
             cwd=self.work,
             env=self.env(**env),
             stdin=subprocess.DEVNULL,

@@ -63,7 +63,7 @@ class ReviewRounds(ScenarioTestCase):
         self.assertIn("- This diff holds only the fixes for the previous review round's fix tickets: #5", reviews[2])
         self.assertIn(f"review round 2/3, since {after_tickets[:9]}", result.output)
 
-    def test_the_review_prompt_is_the_generic_review_instructions_then_the_run_context(self):
+    def test_the_review_prompt_is_the_skill_invocation_the_generic_review_instructions_then_the_run_context(self):
         s = self.scenario()
         s.ticket(2)
 
@@ -71,7 +71,7 @@ class ReviewRounds(ScenarioTestCase):
 
         [review] = [c for c in s.calls("claude") if "review" in c]
         prompt = review["prompt"]
-        self.assertTrue(prompt.startswith("# Ralph review\n"), prompt)
+        self.assertIn("\n\n# Ralph review\n", prompt)
         context = prompt[prompt.index("## Run context") :]
         [run] = s.run_dirs()
         self.assertEqual(
