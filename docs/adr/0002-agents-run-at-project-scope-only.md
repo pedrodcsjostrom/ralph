@@ -13,7 +13,9 @@ Checked against Claude Code 2.1.289, every user-level source of settings, instru
 What no flag excludes, and so can still differ between runners:
 
 - Per-user state in `~/.claude.json`: workspace trust (an interactive session in a project the runner has never trusted first asks to trust it), approvals of the project's `.mcp.json` servers, approvals of external `@imports` in its instruction files, and legacy per-project allowed tools.
-- The runner's environment variables, such as `ANTHROPIC_MODEL` or proxy settings. Ralph only drops the variables of a Claude Code session it is itself started from.
+- The runner's environment variables, such as `ANTHROPIC_MODEL` or proxy settings.
+  Ralph only drops the variables of a Claude Code session it is itself started from.
 - Managed settings and instructions set by an organisation's policy, which are excluded by design.
-- The installed Claude Code version, which decides the built-in skills and agents. Ralph does not pin it.
+- The installed Claude Code version, which decides the built-in skills and agents.
+  Ralph does not pin it.
 - Interactive sessions keep their transcripts under `~/.claude/projects`; headless iterations do not.

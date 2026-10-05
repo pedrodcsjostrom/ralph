@@ -9,9 +9,12 @@ The vocabulary used here and in ralph's prompts is in [GLOSSARY.md](./GLOSSARY.m
 
 ## What you need
 
-- Linux or macOS. Windows works through WSL only.
-- Python 3.9 or newer, git, the GitHub CLI (`gh`, logged in) and Claude Code (`claude`, logged in). Nothing else is installed.
-- A project on GitHub. Specs and tickets are GitHub issues: a ticket is a sub-issue of its spec, labelled `ready-for-agent`, with its blockers recorded as issue dependencies.
+- Linux or macOS.
+  Windows works through WSL only.
+- Python 3.9 or newer, git, the GitHub CLI (`gh`, logged in) and Claude Code (`claude`, logged in).
+  Nothing else is installed.
+- A project on GitHub.
+  Specs and tickets are GitHub issues: a ticket is a sub-issue of its spec, labelled `ready-for-agent`, with its blockers recorded as issue dependencies.
 
 ## Adopting ralph in a project
 
@@ -61,11 +64,19 @@ Every command acts on the wrapper's project, wherever it is run from.
 ./ralph help             # every command, configuration key and environment variable
 ```
 
-- **split**: opens an interactive Claude Code session that agrees a breakdown of the spec with you, then opens its tickets. Run it before a spec's first run.
-- **watch**: opens an interactive session on the ticket a run would implement next, on the same integration branch and with the same prompt. It closes nothing; close the ticket yourself when its commits are good.
-- **run**: implements the frontier one ticket at a time, each iteration in a fresh context window, then runs review rounds until one is clean. A ticket gets a limited number of attempts, and a run a limited number of iterations and review rounds. When a budget is spent or nothing more can be implemented it stops and says why; rerun to carry on. Nothing is pushed. Every run ends by naming its pull request draft.
-- **publish**: pushes the latest run's integration branch to `origin` and opens a pull request against the main branch, with the pull request draft as its body. It refuses a run that did not end cleanly unless you add `--force`.
-- **upgrade**: moves the pin to the newest release, or to a named one with `./ralph upgrade <version>`. Commit the changed pin to upgrade every runner.
+- **split**: opens an interactive Claude Code session that agrees a breakdown of the spec with you, then opens its tickets.
+  Run it before a spec's first run.
+- **watch**: opens an interactive session on the ticket a run would implement next, on the same integration branch and with the same prompt.
+  It closes nothing; close the ticket yourself when its commits are good.
+- **run**: implements the frontier one ticket at a time, each iteration in a fresh context window, then runs review rounds until one is clean.
+  A ticket gets a limited number of attempts, and a run a limited number of iterations and review rounds.
+  When a budget is spent or nothing more can be implemented it stops and says why; rerun to carry on.
+  Nothing is pushed.
+  Every run ends by naming its pull request draft, which covers every run of the spec on its integration branch.
+- **publish**: pushes the latest run's integration branch to `origin` and opens a pull request against the main branch, with the pull request draft as its body.
+  It refuses a run that did not end cleanly unless you add `--force`.
+- **upgrade**: moves the pin to the newest release, or to a named one with `./ralph upgrade <version>`.
+  Commit the changed pin to upgrade every runner.
 
 ## Configuring a project
 

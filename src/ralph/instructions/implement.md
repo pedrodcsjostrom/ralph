@@ -24,14 +24,18 @@ Where they are not, test at the public interface the ticket's acceptance criteri
 ## Rules
 
 - Work on this ticket only.
-- Commit to the current branch. Do not create or switch branches, push, merge, or open a pull request.
-- Do not create, close, label, comment on or edit any issue. The loop closes the ticket when you report it complete.
+- Commit to the current branch.
+  Do not create or switch branches, push, merge, or open a pull request.
+- Do not create, close, label, comment on or edit any issue.
+  The loop closes the ticket when you report it complete.
 - Every commit message names the ticket as `(#<ticket>)`, and carries the key decisions you took and anything the next iteration needs to know.
 - No `Co-Authored-By` or other attribution trailer on any commit.
 - Never use `git stash`; the stash is shared with other checkouts.
 - Regenerate generated files (lockfiles, generated code and docs) with the project's tools instead of editing them by hand.
-- When you review your own work, review the diff against the fixed point in the run context. A review only sees committed changes, so commit first, review, then fix what it finds within this ticket's scope and commit again.
-- Leave the working tree clean. The loop stops dead on uncommitted changes.
+- When you review your own work, review the diff against the fixed point in the run context.
+  A review only sees committed changes, so commit first, review, then fix what it finds within this ticket's scope and commit again.
+- Leave the working tree clean.
+  The loop stops dead on uncommitted changes.
 
 ## Finishing
 
