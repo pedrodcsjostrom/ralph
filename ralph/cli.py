@@ -3,7 +3,7 @@
 import argparse
 import os
 import sys
-from typing import List, Optional
+from typing import Optional
 
 from ralph import agent, checkout, tracker
 from ralph.agent import Agent
@@ -17,7 +17,7 @@ from ralph.tracker import Tracker
 def _issue_number(value: str) -> int:
     number = value[1:] if value.startswith("#") else value
     if not number.isdigit() or int(number) < 1:
-        raise argparse.ArgumentTypeError("%r is not an issue number" % value)
+        raise argparse.ArgumentTypeError(f"{value!r} is not an issue number")
     return int(number)
 
 
@@ -46,7 +46,7 @@ def _run(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
-def main(argv: List[str], console: Optional[Console] = None) -> int:
+def main(argv: list[str], console: Optional[Console] = None) -> int:
     console = console or Console()
     args = _parser().parse_args(argv)
     try:

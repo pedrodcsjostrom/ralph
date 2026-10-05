@@ -17,7 +17,7 @@ def create(project_root: str) -> str:
         with open(ignore, "w") as f:
             f.write("*\n")
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    for suffix in [""] + ["-%d" % i for i in range(2, 1000)]:
+    for suffix in [""] + [f"-{i}" for i in range(2, 1000)]:
         path = os.path.join(runs, stamp + suffix)
         try:
             os.mkdir(path)

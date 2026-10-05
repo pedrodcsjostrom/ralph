@@ -8,7 +8,8 @@ needs is read from the tracker and the integration branch.
 
 import os
 import re
-from typing import Iterable, List, Optional, Set
+from collections.abc import Iterable
+from typing import Optional
 
 from ralph import prompts, runs
 from ralph.agent import Agent
@@ -22,7 +23,7 @@ COMPLETE = "<promise>TICKET COMPLETE</promise>"
 MAIN = "main"
 
 
-def frontier(tickets: Iterable[Ticket], leave_alone: Iterable[int] = ()) -> List[Ticket]:
+def frontier(tickets: Iterable[Ticket], leave_alone: Iterable[int] = ()) -> list[Ticket]:
     """The tickets that are open, ready for an agent and not blocked, lowest number first."""
     skip = set(leave_alone)
     return sorted(
@@ -34,7 +35,7 @@ def frontier(tickets: Iterable[Ticket], leave_alone: Iterable[int] = ()) -> List
 def integration_branch(spec: int, title: str) -> str:
     """The branch a spec lands on when a run starts from the main branch, e.g. spec/1-widget-sorting."""
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).lstrip("-")[:40].rstrip("-")
-    return "spec/%d-%s" % (spec, slug) if slug else "spec/%d" % spec
+    return f"spec/{spec}-{slug}" if slug else f"spec/{spec}"
 
 
 class Loop:
@@ -47,14 +48,12 @@ class Loop:
         self.iteration = 0
         # Tickets an attempt did not close this run. They stay open on the
         # tracker, so a rerun tries them again.
-        self.left_alone: Set[int] = set()
+        self.left_alone: set[int] = set()
 
     def run(self) -> None:
         """Implements the frontier until it is empty. Raises RalphError when the run cannot end cleanly."""
         self._start()
-        self.console.say(
-            "spec #%d on %s, base %s, logs in %s" % (self.spec, self.branch, self.base[:9], self.run_dir)
-        )
+        self.console.say(f"spec #{self.spec} on {self.branch}, base {self.base[:9]}, logs in {self.run_dir}")
 
         while True:
             ready = frontier(self.tracker.tickets(self.spec), self.left_alone)
@@ -66,12 +65,12 @@ class Loop:
         if still_open:
             raise RalphError(
                 "stopping, these tickets are open and nothing on the frontier can be implemented:\n"
-                + "\n".join("#%d %s" % (t.number, t.title) for t in sorted(still_open, key=lambda t: t.number))
+                + "\n".join(f"#{t.number} {t.title}" for t in sorted(still_open, key=lambda t: t.number))
             )
 
         self.console.say(
-            "complete after %d iterations. Every ticket of spec #%d is closed on %s (base %s)."
-            % (self.iteration, self.spec, self.branch, self.base[:9])
+            f"complete after {self.iteration} iterations. "
+            f"Every ticket of spec #{self.spec} is closed on {self.branch} (base {self.base[:9]})."
         )
         self.console.say("nothing was pushed. Look it over, then open the pull request.")
 
@@ -85,8 +84,8 @@ class Loop:
         title = self.tracker.spec_title(self.spec)
         if not self.tracker.tickets(self.spec):
             raise RalphError(
-                "spec #%d has no tickets. Split it into tickets first: sub-issues of #%d labelled %s, "
-                "with their blockers recorded as issue dependencies." % (self.spec, self.spec, READY)
+                f"spec #{self.spec} has no tickets. Split it into tickets first: sub-issues of #{self.spec} "
+                f"labelled {READY}, with their blockers recorded as issue dependencies."
             )
 
         # The whole spec lands on one integration branch and main never gets a
@@ -102,7 +101,7 @@ class Loop:
     def _implement(self, ticket: Ticket) -> None:
         self.iteration += 1
         n = ticket.number
-        self.console.heading("[%d] ticket #%d" % (self.iteration, n))
+        self.console.heading(f"[{self.iteration}] ticket #{n}")
 
         before = self.checkout.head()
         prompt = prompts.implement(
@@ -111,17 +110,17 @@ class Loop:
             fixed_point=before,
             commits=self.checkout.commits(self.base, limit=prompts.RECENT_COMMITS),
         )
-        log = os.path.join(self.run_dir, "%02d-ticket-%d.jsonl" % (self.iteration, n))
+        log = os.path.join(self.run_dir, f"{self.iteration:02d}-ticket-{n}.jsonl")
         final = self.agent.run(prompt, log, self.console.prose)
 
         reason = self._not_done(final, before)
         if reason is None:
             shas = [c.short for c in reversed(self.checkout.commits(before))]
-            self.tracker.close(n, "Implemented by ralph on `%s`: %s" % (self.branch, " ".join(shas)))
-            self.console.say("closed #%d" % n)
+            self.tracker.close(n, f"Implemented by ralph on `{self.branch}`: {' '.join(shas)}")
+            self.console.say(f"closed #{n}")
         else:
             self.left_alone.add(n)
-            self.console.say("#%d stays open, %s; leaving it alone for the rest of this run" % (n, reason))
+            self.console.say(f"#{n} stays open, {reason}; leaving it alone for the rest of this run")
 
     def _not_done(self, final: str, before: str) -> Optional[str]:
         """Why the attempt that started at before did not finish its ticket, or None if it did."""

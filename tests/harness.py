@@ -39,7 +39,7 @@ class Result:
         self.output = output
 
     def __repr__(self):
-        return "Result(status=%r, output=%r)" % (self.status, self.output)
+        return f"Result(status={self.status!r}, output={self.output!r})"
 
 
 class Scenario:
@@ -56,13 +56,15 @@ class Scenario:
         with open(self.gitconfig, "w") as f:
             f.write("[user]\n\tname = ralph\n\temail = ralph@example.com\n[init]\n\tdefaultBranch = main\n")
 
-        self._tracker = {
-            "repo": REPO,
-            "logged_in": True,
-            "issues": {str(SPEC): {"title": SPEC_TITLE, "body": "The spec.", "sub_issues": []}},
-        }
-        self._agent = {"logged_in": True, "behaviours": {}}
-        self._save()
+        self._write_state(
+            "tracker",
+            {
+                "repo": REPO,
+                "logged_in": True,
+                "issues": {str(SPEC): {"title": SPEC_TITLE, "body": "The spec.", "sub_issues": []}},
+            },
+        )
+        self._write_state("agent", {"logged_in": True, "behaviours": {}})
         open(os.path.join(self.fake, "calls.jsonl"), "w").close()
 
         self.install_tool("git", shutil.which("git"))
@@ -78,7 +80,7 @@ class Scenario:
         """Puts tests/fakes/<name>.py on the path as `name`, run by this Python."""
         path = os.path.join(self.bin, name)
         with open(path, "w") as f:
-            f.write("#!/bin/sh\nexec '%s' '%s' \"$@\"\n" % (sys.executable, os.path.join(FAKES, name + ".py")))
+            f.write("#!/bin/sh\nexec '{}' '{}' \"$@\"\n".format(sys.executable, os.path.join(FAKES, name + ".py")))
         os.chmod(path, 0o755)
 
     def install_tool(self, name, target):
@@ -102,45 +104,54 @@ class Scenario:
 
     # The fake tracker.
 
-    def ticket(self, number, title=None, labels=("ready-for-agent",), blocked_by=(), state="open", body="", comments=()):
+    def ticket(
+        self, number, title=None, labels=("ready-for-agent",), blocked_by=(), state="open", body="", comments=()
+    ):
         """Adds a sub-issue to the spec."""
-        self._tracker["issues"][str(number)] = {
-            "title": title or "Ticket %d" % number,
+        tracker = self._read_state("tracker")
+        tracker["issues"][str(number)] = {
+            "title": title or f"Ticket {number}",
             "state": state,
             "labels": list(labels),
             "blocked_by": list(blocked_by),
             "body": body,
             "comments": list(comments),
         }
-        self._tracker["issues"][str(SPEC)]["sub_issues"].append(number)
-        self._save()
+        tracker["issues"][str(SPEC)]["sub_issues"].append(number)
+        self._write_state("tracker", tracker)
 
     def tracker_logged_in(self, logged_in):
-        self._tracker["logged_in"] = logged_in
-        self._save()
+        tracker = self._read_state("tracker")
+        tracker["logged_in"] = logged_in
+        self._write_state("tracker", tracker)
 
     def issue(self, number):
         """The tracker's current view of an issue."""
-        with open(os.path.join(self.fake, "tracker.json")) as f:
-            return json.load(f)["issues"][str(number)]
+        return self._read_state("tracker")["issues"][str(number)]
 
     # The fake agent.
 
     def agent_does(self, ticket, *behaviours):
         """Queues what the agent does on each attempt at a ticket (see tests/fakes/claude.py)."""
-        self._agent["behaviours"][str(ticket)] = list(behaviours)
-        self._save()
+        agent = self._read_state("agent")
+        agent["behaviours"][str(ticket)] = list(behaviours)
+        self._write_state("agent", agent)
 
     def agent_logged_in(self, logged_in):
-        self._agent["logged_in"] = logged_in
-        self._save()
+        agent = self._read_state("agent")
+        agent["logged_in"] = logged_in
+        self._write_state("agent", agent)
 
-    def _save(self):
-        # Fakes mutate their own files during a run; tests configure before it.
-        with open(os.path.join(self.fake, "tracker.json"), "w") as f:
-            json.dump(self._tracker, f, indent=2)
-        with open(os.path.join(self.fake, "agent.json"), "w") as f:
-            json.dump(self._agent, f, indent=2)
+    # The fakes' state files are the only copy: fakes change them during a
+    # run, so the harness always reads them afresh before changing them.
+
+    def _read_state(self, name):
+        with open(os.path.join(self.fake, name + ".json")) as f:
+            return json.load(f)
+
+    def _write_state(self, name, state):
+        with open(os.path.join(self.fake, name + ".json"), "w") as f:
+            json.dump(state, f, indent=2)
 
     # What the fakes saw.
 
@@ -155,9 +166,9 @@ class Scenario:
         events = []
         for call in self.calls():
             if call["tool"] == "claude" and "ticket" in call:
-                events.append("agent #%d" % call["ticket"])
+                events.append(f"agent #{call['ticket']}")
             elif call["tool"] == "gh" and "mutation" in call:
-                events.append("%s #%d" % (call["mutation"], call["ticket"]))
+                events.append(f"{call['mutation']} #{call['ticket']}")
         return events
 
     def prompts(self):
@@ -172,7 +183,7 @@ class Scenario:
             env=self.env(),
             check=True,
             stdout=subprocess.PIPE,
-            universal_newlines=True,
+            text=True,
         ).stdout.strip()
 
     def commit_file(self, path, content, message):
@@ -213,7 +224,7 @@ class Scenario:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            universal_newlines=True,
+            text=True,
             timeout=120,
         )
         return Result(proc.returncode, proc.stdout)

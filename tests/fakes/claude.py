@@ -47,11 +47,11 @@ def git(*args):
 
 
 def commit(ticket):
-    path = "ticket-%d.txt" % ticket
+    path = f"ticket-{ticket}.txt"
     with open(path, "a") as f:
-        f.write("work on ticket %d\n" % ticket)
+        f.write(f"work on ticket {ticket}\n")
     git("add", path)
-    git("commit", "-q", "-m", "Implement ticket (#%d)" % ticket)
+    git("commit", "-q", "-m", f"Implement ticket (#{ticket})")
 
 
 def complete(ticket):
@@ -113,16 +113,16 @@ def headless(state, args, call):
     # A real run prints a line that is not an event before the first event.
     print("not json, as a real run prints before its first event")
     emit({"type": "system", "subtype": "init", "session_id": "fake"})
-    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": "Working on ticket #%d." % ticket}]}})
+    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"Working on ticket #{ticket}."}]}})
     emit(
         {
             "type": "assistant",
             "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "make test"}}]},
         }
     )
-    final = "Fake agent finished ticket #%d." % ticket
+    final = f"Fake agent finished ticket #{ticket}."
     if promise:
-        final += " <promise>%s</promise>" % promise
+        final += f" <promise>{promise}</promise>"
     emit({"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}})
     emit({"type": "result", "subtype": "success", "result": final})
 
@@ -143,7 +143,7 @@ def main(args):
         elif "--print" in args or "-p" in args:
             headless(state, args, call)
         else:
-            sys.stderr.write("fake claude: unexpected call: %s\n" % " ".join(args))
+            sys.stderr.write("fake claude: unexpected call: {}\n".format(" ".join(args)))
             sys.exit(2)
     except SystemExit as exit:
         call["status"] = exit.code

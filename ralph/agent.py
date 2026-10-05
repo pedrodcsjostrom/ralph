@@ -3,7 +3,7 @@
 import json
 import subprocess
 import threading
-from typing import Callable, List
+from typing import Callable
 
 from ralph import proc
 from ralph.errors import RalphError
@@ -15,7 +15,7 @@ HEADLESS = ["--print", "--verbose", "--output-format", "stream-json", "--setting
 PERMISSIONS = ["--permission-mode", "auto"]
 
 
-def problems() -> List[str]:
+def problems() -> list[str]:
     """What stops Claude Code from being used, if anything."""
     if not proc.on_path("claude"):
         return ["Claude Code (claude) is not on PATH; install it from https://claude.com/claude-code"]
@@ -24,12 +24,14 @@ def problems() -> List[str]:
     return []
 
 
-def _texts(event: dict) -> List[str]:
+def _texts(event: dict) -> list[str]:
     """The prose in an assistant event."""
     if event.get("type") != "assistant":
         return []
     content = (event.get("message") or {}).get("content") or []
-    return [part["text"] for part in content if isinstance(part, dict) and part.get("type") == "text" and part.get("text")]
+    return [
+        part["text"] for part in content if isinstance(part, dict) and part.get("type") == "text" and part.get("text")
+    ]
 
 
 class Agent:
@@ -52,7 +54,7 @@ class Agent:
                 errors="replace",
             )
         except OSError as e:
-            raise RalphError("could not start Claude Code: %s" % e)
+            raise RalphError(f"could not start Claude Code: {e}") from e
 
         def feed() -> None:
             try:

@@ -60,12 +60,12 @@ def option(args, name):
 def issue(state, number):
     found = state["issues"].get(str(number))
     if found is None:
-        fail("GraphQL: Could not resolve to an issue or pull request with the number of %s." % number)
+        fail(f"GraphQL: Could not resolve to an issue or pull request with the number of {number}.")
     return found
 
 
 def url(state, number):
-    return "https://github.com/%s/issues/%s" % (state["repo"], number)
+    return "https://github.com/{}/issues/{}".format(state["repo"], number)
 
 
 def open_blockers(state, ticket):

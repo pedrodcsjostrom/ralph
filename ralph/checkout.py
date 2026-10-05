@@ -1,7 +1,7 @@
 """Checkout: the only module that talks to git."""
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 from ralph import proc
 from ralph.errors import RalphError
@@ -18,7 +18,7 @@ class Commit:
         return self.sha[:9]
 
 
-def problems() -> List[str]:
+def problems() -> list[str]:
     """What stops git from being used, if anything."""
     if not proc.on_path("git"):
         return ["git is not on PATH; install git"]
@@ -33,7 +33,7 @@ class Checkout:
     def at(cls, directory: str) -> "Checkout":
         """The checkout containing directory."""
         if not proc.succeeds(["git", "rev-parse", "--show-toplevel"], cwd=directory):
-            raise RalphError("%s is not inside a git repository" % directory)
+            raise RalphError(f"{directory} is not inside a git repository")
         return cls(proc.output(["git", "rev-parse", "--show-toplevel"], cwd=directory).strip())
 
     def _git(self, *args: str) -> str:
@@ -58,15 +58,15 @@ class Checkout:
 
     def merge_base(self, a: str, b: str) -> str:
         if not proc.succeeds(["git", "rev-parse", "--verify", "--quiet", b], cwd=self.root):
-            raise RalphError("there is no branch %s to take the run base from" % b)
+            raise RalphError(f"there is no branch {b} to take the run base from")
         return self._git("merge-base", a, b).strip()
 
-    def commits(self, since: str, until: str = "HEAD", limit: Optional[int] = None) -> List[Commit]:
+    def commits(self, since: str, until: str = "HEAD", limit: Optional[int] = None) -> list[Commit]:
         """The commits in since..until, newest first."""
         args = ["log", "--format=%H%x00%ad%x00%B%x01", "--date=short"]
         if limit is not None:
-            args.append("-n%d" % limit)
-        records = self._git(*args, "%s..%s" % (since, until)).split("\x01")
+            args.append(f"-n{limit}")
+        records = self._git(*args, f"{since}..{until}").split("\x01")
         commits = []
         for record in records:
             record = record.strip("\n")

@@ -14,10 +14,10 @@ class Console:
         stream.flush()
 
     def say(self, message: str) -> None:
-        self._write(self.out, "ralph: %s\n" % message)
+        self._write(self.out, f"ralph: {message}\n")
 
     def heading(self, title: str) -> None:
-        self._write(self.out, "\n=== %s ===\n" % title)
+        self._write(self.out, f"\n=== {title} ===\n")
 
     def prose(self, text: str) -> None:
         """A piece of an agent's prose, as it streams."""
@@ -25,4 +25,4 @@ class Console:
 
     def error(self, message: str) -> None:
         self.out.flush()
-        self._write(self.err, "ralph: %s\n" % message)
+        self._write(self.err, f"ralph: {message}\n")

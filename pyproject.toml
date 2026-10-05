@@ -1,0 +1,9 @@
+# Ralph has no build and no runtime dependencies: it runs from a checkout with
+# the standard library only. This file only configures the linter used in CI.
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

@@ -1,8 +1,8 @@
 """Prompts: composes each iteration's prompt from ralph's generic instructions and the run context."""
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from ralph.checkout import Commit
 from ralph.tracker import TicketDetails
@@ -28,17 +28,17 @@ class RunContext:
 
 def implement(run: RunContext, ticket: TicketDetails, fixed_point: str, commits: Sequence[Commit]) -> str:
     """The prompt for one attempt at a ticket. commits are the integration branch's, newest first."""
-    log = "\n".join("%s %s\n%s\n---" % (c.short, c.date, c.message) for c in commits)
+    log = "\n".join(f"{c.short} {c.date}\n{c.message}\n---" for c in commits)
     return "\n".join(
         [
             _instructions("implement"),
             "",
             "## Run context",
             "",
-            "- Spec: #%d in %s" % (run.spec, run.repo),
-            "- Integration branch: %s" % run.branch,
-            "- Ticket: #%d" % ticket.number,
-            "- Fixed point, the commit to review your work against: %s" % fixed_point,
+            f"- Spec: #{run.spec} in {run.repo}",
+            f"- Integration branch: {run.branch}",
+            f"- Ticket: #{ticket.number}",
+            f"- Fixed point, the commit to review your work against: {fixed_point}",
             "",
             "### The ticket",
             "",
