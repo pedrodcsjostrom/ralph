@@ -1,0 +1,227 @@
+"""The command-line test seam.
+
+A Scenario is a scratch world for one test: a real git repository on `main`,
+a fake tracker holding one spec, a fake agent, and a PATH that holds only the
+fakes and the real git. Tests run the real entry point (`bin/ralph`) in it and
+assert on what a runner could observe: exit status, terminal output, commits,
+and the calls the fakes recorded.
+
+    class RunTest(ScenarioTestCase):
+        def test_something(self):
+            s = self.scenario()
+            s.ticket(2)
+            s.ticket(3, blocked_by=[2])
+            result = s.ralph("run", "1")
+            self.assertEqual(result.status, 0, result.output)
+            self.assertEqual(s.events(), ["agent #2", "close #2", "agent #3", "close #3"])
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RALPH = os.path.join(ROOT, "bin", "ralph")
+FAKES = os.path.join(ROOT, "tests", "fakes")
+
+SPEC = 1
+SPEC_TITLE = "Spec: Widget Sorting!"
+REPO = "acme/widgets"
+
+
+class Result:
+    def __init__(self, status, output):
+        self.status = status
+        self.output = output
+
+    def __repr__(self):
+        return "Result(status=%r, output=%r)" % (self.status, self.output)
+
+
+class Scenario:
+    def __init__(self, root):
+        self.root = root
+        self.work = os.path.join(root, "repo")
+        self.fake = os.path.join(root, "fake")
+        self.bin = os.path.join(root, "bin")
+        self.home = os.path.join(root, "home")
+        for path in (self.work, self.fake, self.bin, self.home):
+            os.makedirs(path)
+
+        self.gitconfig = os.path.join(root, "gitconfig")
+        with open(self.gitconfig, "w") as f:
+            f.write("[user]\n\tname = ralph\n\temail = ralph@example.com\n[init]\n\tdefaultBranch = main\n")
+
+        self._tracker = {
+            "repo": REPO,
+            "logged_in": True,
+            "issues": {str(SPEC): {"title": SPEC_TITLE, "body": "The spec.", "sub_issues": []}},
+        }
+        self._agent = {"logged_in": True, "behaviours": {}}
+        self._save()
+        open(os.path.join(self.fake, "calls.jsonl"), "w").close()
+
+        self.install_tool("git", shutil.which("git"))
+        self.install_fake("gh")
+        self.install_fake("claude")
+
+        self.git("init", "-q", "-b", "main")
+        self.commit_file("README.md", "widgets\n", "Initial commit")
+
+    # The world outside the repository.
+
+    def install_fake(self, name):
+        """Puts tests/fakes/<name>.py on the path as `name`, run by this Python."""
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as f:
+            f.write("#!/bin/sh\nexec '%s' '%s' \"$@\"\n" % (sys.executable, os.path.join(FAKES, name + ".py")))
+        os.chmod(path, 0o755)
+
+    def install_tool(self, name, target):
+        os.symlink(os.path.realpath(target), os.path.join(self.bin, name))
+
+    def remove_tool(self, name):
+        os.remove(os.path.join(self.bin, name))
+
+    def env(self, **extra):
+        env = {
+            "PATH": self.bin,
+            "HOME": self.home,
+            "RALPH_FAKE": self.fake,
+            "GIT_CONFIG_GLOBAL": self.gitconfig,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "LANG": "C.UTF-8",
+            "TMPDIR": self.root,
+        }
+        env.update(extra)
+        return env
+
+    # The fake tracker.
+
+    def ticket(self, number, title=None, labels=("ready-for-agent",), blocked_by=(), state="open", body="", comments=()):
+        """Adds a sub-issue to the spec."""
+        self._tracker["issues"][str(number)] = {
+            "title": title or "Ticket %d" % number,
+            "state": state,
+            "labels": list(labels),
+            "blocked_by": list(blocked_by),
+            "body": body,
+            "comments": list(comments),
+        }
+        self._tracker["issues"][str(SPEC)]["sub_issues"].append(number)
+        self._save()
+
+    def tracker_logged_in(self, logged_in):
+        self._tracker["logged_in"] = logged_in
+        self._save()
+
+    def issue(self, number):
+        """The tracker's current view of an issue."""
+        with open(os.path.join(self.fake, "tracker.json")) as f:
+            return json.load(f)["issues"][str(number)]
+
+    # The fake agent.
+
+    def agent_does(self, ticket, *behaviours):
+        """Queues what the agent does on each attempt at a ticket (see tests/fakes/claude.py)."""
+        self._agent["behaviours"][str(ticket)] = list(behaviours)
+        self._save()
+
+    def agent_logged_in(self, logged_in):
+        self._agent["logged_in"] = logged_in
+        self._save()
+
+    def _save(self):
+        # Fakes mutate their own files during a run; tests configure before it.
+        with open(os.path.join(self.fake, "tracker.json"), "w") as f:
+            json.dump(self._tracker, f, indent=2)
+        with open(os.path.join(self.fake, "agent.json"), "w") as f:
+            json.dump(self._agent, f, indent=2)
+
+    # What the fakes saw.
+
+    def calls(self, tool=None):
+        """Every recorded call, oldest first, optionally only those of one tool."""
+        with open(os.path.join(self.fake, "calls.jsonl")) as f:
+            calls = [json.loads(line) for line in f if line.strip()]
+        return [c for c in calls if tool is None or c["tool"] == tool]
+
+    def events(self):
+        """Agent runs and tracker mutations, in order, as short strings like "agent #3" and "close #3"."""
+        events = []
+        for call in self.calls():
+            if call["tool"] == "claude" and "ticket" in call:
+                events.append("agent #%d" % call["ticket"])
+            elif call["tool"] == "gh" and "mutation" in call:
+                events.append("%s #%d" % (call["mutation"], call["ticket"]))
+        return events
+
+    def prompts(self):
+        return [c["prompt"] for c in self.calls("claude") if "prompt" in c]
+
+    # The repository.
+
+    def git(self, *args):
+        return subprocess.run(
+            ("git",) + args,
+            cwd=self.work,
+            env=self.env(),
+            check=True,
+            stdout=subprocess.PIPE,
+            universal_newlines=True,
+        ).stdout.strip()
+
+    def commit_file(self, path, content, message):
+        self.write(path, content)
+        self.git("add", path)
+        self.git("commit", "-q", "-m", message)
+
+    def write(self, path, content):
+        full = os.path.join(self.work, path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w") as f:
+            f.write(content)
+
+    def branch(self):
+        return self.git("branch", "--show-current")
+
+    def log(self, revisions):
+        """Subjects of the commits in a revision range, oldest first."""
+        out = self.git("log", "--reverse", "--format=%s", revisions)
+        return out.splitlines() if out else []
+
+    def status(self):
+        return self.git("status", "--porcelain")
+
+    def run_dirs(self):
+        runs = os.path.join(self.work, ".ralph", "runs")
+        if not os.path.isdir(runs):
+            return []
+        return sorted(os.path.join(runs, d) for d in os.listdir(runs) if os.path.isdir(os.path.join(runs, d)))
+
+    # Ralph.
+
+    def ralph(self, *args, **env):
+        proc = subprocess.run(
+            (sys.executable, RALPH) + args,
+            cwd=self.work,
+            env=self.env(**env),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            timeout=120,
+        )
+        return Result(proc.returncode, proc.stdout)
+
+
+class ScenarioTestCase(unittest.TestCase):
+    def scenario(self):
+        root = tempfile.mkdtemp(prefix="ralph-test-")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        # macOS puts temporary files behind a symlink; git reports real paths.
+        return Scenario(os.path.realpath(root))
