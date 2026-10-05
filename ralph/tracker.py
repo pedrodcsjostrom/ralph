@@ -138,6 +138,7 @@ class Tracker:
     def open_pull_request(self, base: str, head: str, title: str, body: str) -> str:
         """Opens a pull request of the pushed branch head into base and returns its URL."""
         out = self._gh(
+            f"opening a pull request of {head}",
             "pr",
             "create",
             "--repo",
