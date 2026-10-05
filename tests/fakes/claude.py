@@ -74,11 +74,43 @@ def no_promise(ticket):
     return None
 
 
+def dirty(ticket):
+    """Leaves a change uncommitted and says it is blocked."""
+    with open(f"ticket-{ticket}.txt", "a") as f:
+        f.write("work in progress\n")
+    return "TICKET BLOCKED"
+
+
+def complete_dirty(ticket):
+    """Commits and claims completion, but leaves a change uncommitted too."""
+    commit(ticket)
+    with open(f"ticket-{ticket}.txt", "a") as f:
+        f.write("work in progress\n")
+    return "TICKET COMPLETE"
+
+
+def switch_branch(ticket):
+    """Commits its work on a new branch, `elsewhere`, and leaves the checkout there."""
+    git("switch", "-q", "-c", "elsewhere")
+    return complete(ticket)
+
+
+def detach(ticket):
+    """Commits its work, then detaches HEAD."""
+    promise = complete(ticket)
+    git("switch", "-q", "--detach")
+    return promise
+
+
 BEHAVIOURS = {
     "complete": complete,
     "blocked": blocked,
     "no-commit": no_commit,
     "no-promise": no_promise,
+    "dirty": dirty,
+    "complete-dirty": complete_dirty,
+    "switch-branch": switch_branch,
+    "detach": detach,
 }
 
 
