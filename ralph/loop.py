@@ -11,12 +11,13 @@ import re
 from collections.abc import Iterable
 from typing import Optional
 
-from ralph import prompts, runs, verify
+from ralph import findings, prompts, runs, verify
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
 from ralph.console import Console
 from ralph.errors import RalphError
+from ralph.record import ReviewRoundRecord, RunRecord
 from ralph.tracker import Ticket, Tracker
 
 READY = "ready-for-agent"
@@ -59,10 +60,57 @@ class Loop:
         self.left_alone: set[int] = set()
 
     def run(self) -> None:
-        """Implements the frontier until it is empty. Raises RalphError when the run cannot end cleanly."""
+        """Implements and reviews until a review round is clean. Raises RalphError when the run cannot end cleanly."""
         self._start()
         self.console.say(f"spec #{self.spec} on {self.branch}, base {self.base[:9]}, logs in {self.run_dir}")
+        try:
+            self._rounds()
+        except RalphError as e:
+            self.record.outcome, self.record.reason = "stopped", str(e)
+            self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
+            self.record.save(self.run_dir)
+            raise
+        self.record.outcome = "complete"
+        self.record.save(self.run_dir)
+        self.console.say(
+            f"complete after {self.iteration} iterations. "
+            f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
+        )
+        self.console.say("nothing was pushed. Look it over, then open the pull request.")
 
+    def _rounds(self) -> None:
+        """Implements the frontier, then reviews, until a review round finds nothing or nothing is left to review.
+
+        The first round reviews everything since the run base. Each later round reviews only what
+        was committed since the previous one, the fixes it asked for, so the loop narrows instead
+        of reviewing everything forever.
+        """
+        fix_tickets: list[int] = []
+        round_ = 0
+        while True:
+            self._implement_frontier()
+            head = self.checkout.head()
+            if head == self.fixed_point:
+                return
+            if round_ >= self.config.max_review_rounds:
+                raise RalphError(
+                    f"the review round budget ({self.config.max_review_rounds}) is spent; "
+                    f"these commits since {self.fixed_point[:9]} are unreviewed:\n{self._unreviewed()}"
+                )
+            if self.iteration >= self.config.max_iterations:
+                raise RalphError(
+                    f"the iteration budget ({self.config.max_iterations}) is spent before review round "
+                    f"{round_ + 1}; rerun to carry on. These commits since {self.fixed_point[:9]} are unreviewed:\n"
+                    f"{self._unreviewed()}"
+                )
+            round_ += 1
+            fix_tickets = self._review(round_, fix_tickets)
+            if not fix_tickets:
+                return
+            self.fixed_point = head
+
+    def _implement_frontier(self) -> None:
+        """Implements the frontier until it is empty, and stops the run if that leaves tickets open."""
         while True:
             tickets = self.tracker.tickets(self.spec)
             ready = frontier(tickets, self.left_alone)
@@ -81,11 +129,12 @@ class Loop:
                 f"stopping, these tickets are open and nothing on the frontier can be implemented:\n{still_open}"
             )
 
-        self.console.say(
-            f"complete after {self.iteration} iterations. "
-            f"Every ticket of spec #{self.spec} is closed on {self.branch} (base {self.base[:9]})."
+    def _unreviewed(self) -> str:
+        """One "<short sha> <subject>" line per commit since the fixed point, oldest first."""
+        return "\n".join(
+            f"{c.short} {c.message.splitlines()[0] if c.message else ''}"
+            for c in reversed(self.checkout.commits(self.fixed_point))
         )
-        self.console.say("nothing was pushed. Look it over, then open the pull request.")
 
     def _start(self) -> None:
         if not self.checkout.is_clean():
@@ -108,8 +157,12 @@ class Loop:
             self.checkout.switch(branch)
         self.branch = branch
         self.base = self.checkout.merge_base("HEAD", MAIN)
+        # The commit the next review round compares the work against.
+        self.fixed_point = self.base
         self.context = prompts.RunContext(spec=self.spec, repo=self.tracker.repo, branch=branch)
         self.run_dir = runs.create(self.checkout.root)
+        self.record = RunRecord(spec=self.spec, branch=branch, base=self.base)
+        self.record.save(self.run_dir)
 
     def _implement(self, ticket: Ticket) -> None:
         self.iteration += 1
@@ -127,19 +180,63 @@ class Loop:
             commits=self.checkout.commits(self.base, limit=prompts.RECENT_COMMITS),
         )
         log = os.path.join(self.run_dir, f"{self.iteration:02d}-ticket-{n}.jsonl")
+        record = self.record.ticket(n, ticket.title)
+        record.attempts = attempt
+        self.record.save(self.run_dir)
         final = self.agent.run(prompt, log, self.console.prose)
         self._check_checkout(f"iteration {self.iteration} (ticket #{n})")
 
         reason = self._not_done(final, before) or self._verify(n)
         if reason is None:
-            shas = [c.short for c in reversed(self.checkout.commits(before))]
-            self.tracker.close(n, f"Implemented by ralph on `{self.branch}`: {' '.join(shas)}")
+            commits = list(reversed(self.checkout.commits(before)))
+            self.tracker.close(n, f"Implemented by ralph on `{self.branch}`: {' '.join(c.short for c in commits)}")
+            record.outcome = "closed"
+            record.commits = [c.sha for c in commits]
+            self.record.save(self.run_dir)
             self.console.say(f"closed #{n}")
             return
         self.console.say(f"#{n} stays open, {reason}")
         if attempt >= self.config.max_attempts:
             self.left_alone.add(n)
+            record.outcome = "given up"
+            self.record.save(self.run_dir)
             self.console.say(f"giving up on #{n} after {attempt} attempts; it is left alone for the rest of this run")
+
+    def _review(self, round_: int, resolves: list[int]) -> list[int]:
+        """Runs one review round and publishes its findings as fix tickets. Returns their numbers."""
+        self.iteration += 1
+        self.console.heading(
+            f"[{self.iteration}/{self.config.max_iterations}] review round {round_}/{self.config.max_review_rounds}, "
+            f"since {self.fixed_point[:9]}"
+        )
+
+        head = self.checkout.head()
+        findings_file = os.path.join(self.run_dir, f"review-{round_}.json")
+        record = ReviewRoundRecord(round_, self.fixed_point, head, findings_file, resolves=list(resolves))
+        self.record.review_rounds.append(record)
+        self.record.save(self.run_dir)
+        prompt = prompts.review(self.context, self.fixed_point, round_, findings_file, resolves)
+        log = os.path.join(self.run_dir, f"{self.iteration:02d}-review-{round_}.jsonl")
+        self.agent.run(prompt, log, self.console.prose)
+        culprit = f"iteration {self.iteration} (review round {round_})"
+        self._check_checkout(culprit)
+        if self.checkout.head() != head:
+            raise RalphError(f"{culprit} made commits, but a review changes nothing; inspect them, then rerun")
+
+        try:
+            found = findings.read(findings_file)
+        except findings.Unreadable as e:
+            # A broken review must never pass for a clean one.
+            raise RalphError(f"review round {round_} {e}; rerun to review again") from None
+        if not found:
+            self.console.say(f"review round {round_} found nothing")
+        for finding in found:
+            n = self.tracker.create_ticket(self.spec, finding.title, finding.ticket_body(self.spec), [READY])
+            record.fix_tickets.append(n)
+            self.record.ticket(n, finding.title, from_review_round=round_)
+            self.record.save(self.run_dir)
+            self.console.say(f"review finding is now #{n}: {finding.title}")
+        return record.fix_tickets
 
     def _check_checkout(self, culprit: str) -> None:
         """Stops the run unless the checkout is clean and on the integration branch, so nothing builds on a mess."""

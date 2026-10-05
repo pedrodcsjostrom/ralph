@@ -54,3 +54,22 @@ def implement(run: RunContext, ticket: TicketDetails, fixed_point: str, commits:
             "",
         ]
     )
+
+
+def review(run: RunContext, fixed_point: str, round_: int, findings_file: str, fix_tickets: Sequence[int]) -> str:
+    """The prompt for one review round. fix_tickets are those the diff since fixed_point was meant to resolve."""
+    lines = [
+        _instructions("review"),
+        "",
+        "## Run context",
+        "",
+        f"- Spec: #{run.spec} in {run.repo}",
+        f"- Integration branch: {run.branch}",
+        f"- Fixed point, the commit to review the work against: {fixed_point}",
+        f"- Review round: {round_}",
+        f"- Findings file: {findings_file}",
+    ]
+    if fix_tickets:
+        names = ", ".join(f"#{n}" for n in fix_tickets)
+        lines.append(f"- This diff holds only the fixes for the previous review round's fix tickets: {names}")
+    return "\n".join(lines + [""])

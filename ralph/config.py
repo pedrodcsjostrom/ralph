@@ -19,6 +19,8 @@ class Config:
     max_attempts: int = 2
     # Iterations per run before it stops as not converging.
     max_iterations: int = 30
+    # Review rounds per run before it stops as not converging.
+    max_review_rounds: int = 3
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "Config":
@@ -27,6 +29,7 @@ class Config:
             verify=env.get("RALPH_VERIFY", "").strip() or None,
             max_attempts=_count(env, "RALPH_MAX_ATTEMPTS", default.max_attempts),
             max_iterations=_count(env, "RALPH_MAX_ITERATIONS", default.max_iterations),
+            max_review_rounds=_count(env, "RALPH_MAX_REVIEW_ROUNDS", default.max_review_rounds),
         )
 
 

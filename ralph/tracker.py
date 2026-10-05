@@ -1,8 +1,9 @@
 """Tracker: the only module that talks to GitHub, through the GitHub CLI."""
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from ralph import proc
 from ralph.errors import RalphError
@@ -69,8 +70,8 @@ class Tracker:
         self.directory = directory
         self.repo = self._json("repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
 
-    def _gh(self, *args: str) -> str:
-        return proc.output(("gh",) + args, cwd=self.directory)
+    def _gh(self, *args: str, input: Optional[str] = None) -> str:
+        return proc.output(("gh",) + args, cwd=self.directory, input=input)
 
     def _json(self, *args: str) -> dict[str, Any]:
         return json.loads(self._gh(*args))
@@ -113,3 +114,20 @@ class Tracker:
 
     def comment(self, number: int, body: str) -> None:
         self._gh("issue", "comment", str(number), "--repo", self.repo, "--body", body)
+
+    def create_ticket(self, spec: int, title: str, body: str, labels: Sequence[str]) -> int:
+        """Opens a new ticket as a sub-issue of spec and returns its number."""
+        fields = json.dumps({"title": title, "body": body, "labels": list(labels)})
+        created = json.loads(
+            self._gh("api", f"repos/{self.repo}/issues", "--method", "POST", "--input", "-", input=fields)
+        )
+        # Sub-issues are linked by the issue's id, not its number.
+        self._gh(
+            "api",
+            f"repos/{self.repo}/issues/{spec}/sub_issues",
+            "--method",
+            "POST",
+            "-F",
+            f"sub_issue_id={created['id']}",
+        )
+        return created["number"]

@@ -30,7 +30,7 @@ class Attempts(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertEqual(s.events(), ["agent #2", "agent #2", "close #2"])
+        self.assertEqual(s.events(), ["agent #2", "agent #2", "close #2", "review 1"])
         self.assertIn("=== [2/30] ticket #2, attempt 2/2 ===", result.output)
 
     def test_the_attempt_budget_comes_from_the_environment(self):
@@ -103,7 +103,7 @@ class Verify(ScenarioTestCase):
         result = s.ralph("run", "1", RALPH_VERIFY="test -f ticket-2.txt")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertEqual(s.events(), ["agent #2", "close #2"])
+        self.assertEqual(s.events(), ["agent #2", "close #2", "review 1"])
 
     def test_verify_does_not_run_for_an_attempt_that_did_not_finish(self):
         s = self.scenario()
@@ -191,15 +191,16 @@ class IterationBudget(ScenarioTestCase):
             result.output,
         )
 
-    def test_a_run_that_finishes_on_its_last_iteration_succeeds(self):
+    def test_a_run_whose_clean_review_is_its_last_iteration_succeeds(self):
         s = self.scenario()
         s.ticket(2)
         s.ticket(3)
 
-        result = s.ralph("run", "1", RALPH_MAX_ITERATIONS="2")
+        result = s.ralph("run", "1", RALPH_MAX_ITERATIONS="3")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertEqual(s.events(), ["agent #2", "close #2", "agent #3", "close #3"])
+        self.assertEqual(s.events(), ["agent #2", "close #2", "agent #3", "close #3", "review 1"])
+        self.assertIn("=== [3/3] review round 1/3", result.output)
 
     def test_every_attempt_spends_an_iteration(self):
         s = self.scenario()

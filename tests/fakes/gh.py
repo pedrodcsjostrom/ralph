@@ -49,6 +49,18 @@ def unexpected(args):
     fail("fake gh: unexpected call: " + " ".join(args), 2)
 
 
+# The `gh api` options ralph uses that take a value.
+API_VALUE_OPTIONS = {"--method", "-X", "--input", "--field", "-F", "--raw-field", "-f"}
+
+
+def api_path(args):
+    """The endpoint of a `gh api` call: its one positional argument."""
+    positional = [
+        a for i, a in enumerate(args) if i > 0 and not a.startswith("-") and args[i - 1] not in API_VALUE_OPTIONS
+    ]
+    return positional[0] if positional else ""
+
+
 def option(args, name):
     """The value following `name` in args, or None."""
     for i, arg in enumerate(args[:-1]):
@@ -120,10 +132,48 @@ def issue_comment(state, args):
     return {"mutation": "comment", "ticket": number, "body": body}
 
 
+def create_issue(state, args):
+    """`gh api repos/<repo>/issues --method POST --input -`: the new issue's fields come in on stdin."""
+    fields = json.load(sys.stdin)
+    number = max(int(n) for n in state["issues"]) + 1
+    state["issues"][str(number)] = {
+        "title": fields["title"],
+        "state": "open",
+        "labels": list(fields.get("labels", [])),
+        "blocked_by": [],
+        "body": fields.get("body", ""),
+        "comments": [],
+    }
+    save(state)
+    print(json.dumps({"number": number, "id": number * 1000, "html_url": url(state, number)}))
+    return {"mutation": "create", "ticket": number, "fields": fields}
+
+
+def add_sub_issue(state, args, spec):
+    """`gh api repos/<repo>/issues/<spec>/sub_issues --method POST -F sub_issue_id=<id>`."""
+    field = option(args, "-F") or option(args, "--field") or ""
+    if not field.startswith("sub_issue_id="):
+        unexpected(args)
+    number = int(field.split("=", 1)[1]) // 1000
+    issue(state, number)
+    issue(state, spec)["sub_issues"].append(number)
+    save(state)
+    print(json.dumps({"number": spec}))
+    return {"mutation": "link", "ticket": number, "spec": spec}
+
+
 def api(state, args):
-    path = next((a for a in args[1:] if not a.startswith("-")), "")
+    path = api_path(args)
+    method = option(args, "--method") or option(args, "-X")
+    if method == "POST":
+        if path == "repos/{}/issues".format(state["repo"]) and option(args, "--input") == "-":
+            return create_issue(state, args)
+        match = re.match(r"repos/([^/]+/[^/]+)/issues/(\d+)/sub_issues$", path)
+        if match and match.group(1) == state["repo"]:
+            return add_sub_issue(state, args, int(match.group(2)))
+        unexpected(args)
     match = re.match(r"repos/([^/]+/[^/]+)/issues/(\d+)/sub_issues(\?.*)?$", path)
-    if match and match.group(1) == state["repo"] and "--method" not in args:
+    if match and match.group(1) == state["repo"] and method is None:
         spec = issue(state, int(match.group(2)))
         tickets = []
         for n in spec.get("sub_issues", []):

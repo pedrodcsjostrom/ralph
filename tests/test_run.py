@@ -18,7 +18,9 @@ class ImplementsTheFrontier(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertEqual(s.events(), ["agent #3", "close #3", "agent #2", "close #2", "agent #4", "close #4"])
+        self.assertEqual(
+            s.events(), ["agent #3", "close #3", "agent #2", "close #2", "agent #4", "close #4", "review 1"]
+        )
         self.assertEqual(
             s.log("main..HEAD"),
             ["Implement ticket (#3)", "Implement ticket (#2)", "Implement ticket (#4)"],
@@ -51,7 +53,9 @@ class ImplementsTheFrontier(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertEqual(s.events(), ["agent #3", "close #3", "agent #4", "close #4", "agent #2", "close #2"])
+        self.assertEqual(
+            s.events(), ["agent #3", "close #3", "agent #4", "close #4", "agent #2", "close #2", "review 1"]
+        )
 
 
 class IntegrationBranch(ScenarioTestCase):
@@ -259,7 +263,17 @@ class Rerun(ScenarioTestCase):
         self.assertEqual(second.status, 0, second.output)
         self.assertEqual(
             s.events(),
-            ["agent #2", "close #2", "agent #3", "agent #3", "agent #3", "close #3", "agent #4", "close #4"],
+            [
+                "agent #2",
+                "close #2",
+                "agent #3",
+                "agent #3",
+                "agent #3",
+                "close #3",
+                "agent #4",
+                "close #4",
+                "review 1",
+            ],
         )
         self.assertEqual(
             s.log("main..HEAD"), ["Implement ticket (#2)", "Implement ticket (#3)", "Implement ticket (#4)"]
@@ -291,7 +305,10 @@ class WhatTheRunnerSees(ScenarioTestCase):
 
         [run] = s.run_dirs()
         self.assertIn(f"logs in {run}", result.output)
-        self.assertEqual(sorted(os.listdir(run)), ["01-ticket-2.jsonl", "02-ticket-3.jsonl"])
+        self.assertEqual(
+            sorted(os.listdir(run)),
+            ["01-ticket-2.jsonl", "02-ticket-3.jsonl", "03-review-1.jsonl", "review-1.json", "run.json"],
+        )
         with open(os.path.join(run, "01-ticket-2.jsonl")) as f:
             events = [json.loads(line) for line in f]
         self.assertEqual([e["type"] for e in events], ["system", "assistant", "assistant", "assistant", "result"])
@@ -314,12 +331,14 @@ class TheAgent(ScenarioTestCase):
 
         s.ralph("run", "1")
 
-        [call] = [c for c in s.calls("claude") if "prompt" in c]
-        args = call["args"]
-        self.assertIn("--print", args)
-        self.assertEqual(args[args.index("--output-format") + 1], "stream-json")
-        settings = json.loads(args[args.index("--settings") + 1])
-        self.assertEqual(settings["attribution"], {"commit": "", "pr": ""})
+        iterations = [c for c in s.calls("claude") if "prompt" in c]
+        self.assertEqual([c.get("ticket") or f"review {c['review']}" for c in iterations], [2, "review 1"])
+        for call in iterations:
+            args = call["args"]
+            self.assertIn("--print", args)
+            self.assertEqual(args[args.index("--output-format") + 1], "stream-json")
+            settings = json.loads(args[args.index("--settings") + 1])
+            self.assertEqual(settings["attribution"], {"commit": "", "pr": ""})
 
     def test_the_prompt_is_the_generic_instructions_then_the_run_context(self):
         s = self.scenario()

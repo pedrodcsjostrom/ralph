@@ -13,6 +13,15 @@ invocation, with its arguments and prompt, is appended to
 
 To add a behaviour, add a function to BEHAVIOURS. It receives the ticket number
 and returns the promise to end the final message with, or None for no promise.
+
+A review (a prompt with a "- Findings file:" line instead of a ticket) acts on
+the entry for its round in "reviews":
+
+    {"reviews": {"1": {"findings": "[...]", "also": "dirty"}}}
+
+"findings" is the text written to the findings file, verbatim, or null to write
+no file at all; a round with no entry writes "[]". "also" is an optional
+misbehaviour from REVIEW_MISBEHAVIOURS.
 """
 
 import json
@@ -114,6 +123,46 @@ BEHAVIOURS = {
 }
 
 
+def review_dirty():
+    with open("review-notes.txt", "w") as f:
+        f.write("notes the review left behind\n")
+
+
+def review_commit():
+    with open("review-fix.txt", "w") as f:
+        f.write("a fix the review should not have made\n")
+    git("add", "review-fix.txt")
+    git("commit", "-q", "-m", "Fix what the review found")
+
+
+def review_switch_branch():
+    git("switch", "-q", "-c", "elsewhere")
+
+
+REVIEW_MISBEHAVIOURS = {
+    "dirty": review_dirty,
+    "commit": review_commit,
+    "switch-branch": review_switch_branch,
+}
+
+
+def review(state, prompt, findings_file, call):
+    round_ = int(re.search(r"^- Review round: (\d+)$", prompt, re.M).group(1))
+    plan = state.get("reviews", {}).get(str(round_), {"findings": "[]"})
+    call.update(review=round_, findings_file=findings_file)
+    if plan.get("findings") is not None:
+        with open(findings_file, "w") as f:
+            f.write(plan["findings"])
+    if plan.get("also"):
+        REVIEW_MISBEHAVIOURS[plan["also"]]()
+
+    print("not json, as a real run prints before its first event")
+    emit({"type": "system", "subtype": "init", "session_id": "fake"})
+    final = f"Fake review round {round_} done."
+    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}})
+    emit({"type": "result", "subtype": "success", "result": final})
+
+
 def next_behaviour(state, ticket):
     queue = state.setdefault("behaviours", {}).get(str(ticket)) or ["complete"]
     if len(queue) > 1:
@@ -133,6 +182,10 @@ def headless(state, args, call):
         sys.exit(2)
     prompt = sys.stdin.read()
     call["prompt"] = prompt
+    findings = re.search(r"^- Findings file: (.+)$", prompt, re.M)
+    if findings:
+        review(state, prompt, findings.group(1), call)
+        return
     match = re.search(r"^- Ticket: #(\d+)$", prompt, re.M)
     if not match:
         sys.stderr.write("fake claude: no ticket in the prompt\n")

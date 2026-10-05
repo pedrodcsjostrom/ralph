@@ -22,13 +22,14 @@ def succeeds(args: Sequence[str], cwd: Optional[str] = None) -> bool:
     return proc.returncode == 0
 
 
-def output(args: Sequence[str], cwd: Optional[str] = None) -> str:
-    """The command's standard output. A failure stops the run with its error output."""
+def output(args: Sequence[str], cwd: Optional[str] = None, input: Optional[str] = None) -> str:
+    """The command's standard output, fed input on stdin if given. A failure stops the run with its error output."""
     try:
         proc = subprocess.run(
             args,
             cwd=cwd,
-            stdin=subprocess.DEVNULL,
+            input=input,
+            stdin=subprocess.DEVNULL if input is None else None,
             capture_output=True,
             text=True,
         )

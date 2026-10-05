@@ -137,6 +137,19 @@ class Scenario:
         agent["behaviours"][str(ticket)] = list(behaviours)
         self._write_state("agent", agent)
 
+    def review_finds(self, round_, *findings):
+        """What review round round_ writes to its findings file: dicts with title, what_to_build and so on."""
+        self.review_writes(round_, json.dumps(list(findings)))
+
+    def review_writes(self, round_, text, also=None):
+        """Review round round_ writes text, verbatim, as its findings; None writes no findings file at all.
+
+        also is a misbehaviour on top: "dirty", "commit" or "switch-branch" (see tests/fakes/claude.py).
+        """
+        agent = self._read_state("agent")
+        agent.setdefault("reviews", {})[str(round_)] = {"findings": text, "also": also}
+        self._write_state("agent", agent)
+
     def agent_logged_in(self, logged_in):
         agent = self._read_state("agent")
         agent["logged_in"] = logged_in
@@ -162,11 +175,13 @@ class Scenario:
         return [c for c in calls if tool is None or c["tool"] == tool]
 
     def events(self):
-        """Agent runs and tracker mutations, in order, as short strings like "agent #3" and "close #3"."""
+        """Agent runs and tracker mutations, in order, as short strings like "agent #3", "review 1" and "close #3"."""
         events = []
         for call in self.calls():
             if call["tool"] == "claude" and "ticket" in call:
                 events.append(f"agent #{call['ticket']}")
+            elif call["tool"] == "claude" and "review" in call:
+                events.append(f"review {call['review']}")
             elif call["tool"] == "gh" and "mutation" in call:
                 events.append(f"{call['mutation']} #{call['ticket']}")
         return events
