@@ -3,7 +3,9 @@
 It decides which ticket is next, whether it is done and when to stop. It
 knows Tracker, Agent and Checkout only by what they answer and perform, never
 by how. A run keeps no state of its own between invocations: everything it
-needs is read from the tracker and the integration branch.
+decides on is read from the tracker and the integration branch. Only the pull
+request draft also reads the records earlier runs left, to describe the whole
+spec's work.
 """
 
 import os
