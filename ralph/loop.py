@@ -11,9 +11,10 @@ import re
 from collections.abc import Iterable
 from typing import Optional
 
-from ralph import prompts, runs
+from ralph import prompts, runs, verify
 from ralph.agent import Agent
 from ralph.checkout import Checkout
+from ralph.config import Config
 from ralph.console import Console
 from ralph.errors import RalphError
 from ralph.tracker import Ticket, Tracker
@@ -39,15 +40,17 @@ def integration_branch(spec: int, title: str) -> str:
 
 
 class Loop:
-    def __init__(self, spec: int, tracker: Tracker, agent: Agent, checkout: Checkout, console: Console):
+    def __init__(self, spec: int, tracker: Tracker, agent: Agent, checkout: Checkout, console: Console, config: Config):
         self.spec = spec
+        self.config = config
         self.tracker = tracker
         self.agent = agent
         self.checkout = checkout
         self.console = console
         self.iteration = 0
-        # Tickets an attempt did not close this run. They stay open on the
-        # tracker, so a rerun tries them again.
+        self.attempts: dict[int, int] = {}
+        # Tickets that spent their attempts without closing. They stay open on
+        # the tracker, so a rerun tries them again.
         self.left_alone: set[int] = set()
 
     def run(self) -> None:
@@ -101,7 +104,10 @@ class Loop:
     def _implement(self, ticket: Ticket) -> None:
         self.iteration += 1
         n = ticket.number
-        self.console.heading(f"[{self.iteration}] ticket #{n}")
+        attempt = self.attempts[n] = self.attempts.get(n, 0) + 1
+        self.console.heading(
+            f"[{self.iteration}/{self.config.max_iterations}] ticket #{n}, attempt {attempt}/{self.config.max_attempts}"
+        )
 
         before = self.checkout.head()
         prompt = prompts.implement(
@@ -113,14 +119,16 @@ class Loop:
         log = os.path.join(self.run_dir, f"{self.iteration:02d}-ticket-{n}.jsonl")
         final = self.agent.run(prompt, log, self.console.prose)
 
-        reason = self._not_done(final, before)
+        reason = self._not_done(final, before) or self._verify(n)
         if reason is None:
             shas = [c.short for c in reversed(self.checkout.commits(before))]
             self.tracker.close(n, f"Implemented by ralph on `{self.branch}`: {' '.join(shas)}")
             self.console.say(f"closed #{n}")
-        else:
+            return
+        self.console.say(f"#{n} stays open, {reason}")
+        if attempt >= self.config.max_attempts:
             self.left_alone.add(n)
-            self.console.say(f"#{n} stays open, {reason}; leaving it alone for the rest of this run")
+            self.console.say(f"giving up on #{n} after {attempt} attempts; it is left alone for the rest of this run")
 
     def _not_done(self, final: str, before: str) -> Optional[str]:
         """Why the attempt that started at before did not finish its ticket, or None if it did."""
@@ -129,3 +137,18 @@ class Loop:
         if self.checkout.head() == before:
             return "the agent reported it complete but made no commit"
         return None
+
+    def _verify(self, number: int) -> Optional[str]:
+        """Runs the verify command, if any. Why it failed, or None if it passed or there is none."""
+        if self.config.verify is None:
+            return None
+        failure = verify.run(self.config.verify, self.checkout.root)
+        if failure is None:
+            return None
+        # The next attempt reads the ticket's comments, so it learns what went wrong.
+        fence = "```"
+        self.tracker.comment(
+            number,
+            f"ralph: `{failure.command}` failed after this attempt.\n\n{fence}\n{failure.tail()}\n{fence}",
+        )
+        return f"`{failure.command}` failed with exit status {failure.status}"

@@ -8,6 +8,7 @@ from typing import Optional
 from ralph import agent, checkout, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
+from ralph.config import Config
 from ralph.console import Console
 from ralph.errors import RalphError
 from ralph.loop import Loop
@@ -40,9 +41,10 @@ def require_tools() -> None:
 
 
 def _run(args: argparse.Namespace, console: Console) -> int:
+    config = Config.from_env(os.environ)
     require_tools()
     repo = Checkout.at(os.getcwd())
-    Loop(args.spec, Tracker(repo.root), Agent(repo.root), repo, console).run()
+    Loop(args.spec, Tracker(repo.root), Agent(repo.root), repo, console, config).run()
     return 0
 
 

@@ -221,7 +221,7 @@ class ClosesOnlyCompletedTickets(ScenarioTestCase):
                 s.ticket(3)
                 s.agent_does(2, behaviour)
 
-                result = s.ralph("run", "1")
+                result = s.ralph("run", "1", RALPH_MAX_ATTEMPTS="1")
 
                 self.assertEqual(result.status, 1, result.output)
                 self.assertEqual(s.events(), ["agent #2", "agent #3", "close #3"])
@@ -239,7 +239,7 @@ class ClosesOnlyCompletedTickets(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 1, result.output)
-        self.assertEqual(s.events(), ["agent #2"])
+        self.assertEqual(s.events(), ["agent #2", "agent #2"])
         self.assertIn("#2 Ticket 2\n#3 Ticket 3", result.output)
 
 
@@ -258,7 +258,8 @@ class Rerun(ScenarioTestCase):
 
         self.assertEqual(second.status, 0, second.output)
         self.assertEqual(
-            s.events(), ["agent #2", "close #2", "agent #3", "agent #3", "close #3", "agent #4", "close #4"]
+            s.events(),
+            ["agent #2", "close #2", "agent #3", "agent #3", "agent #3", "close #3", "agent #4", "close #4"],
         )
         self.assertEqual(
             s.log("main..HEAD"), ["Implement ticket (#2)", "Implement ticket (#3)", "Implement ticket (#4)"]
