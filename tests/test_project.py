@@ -214,7 +214,7 @@ class Help(ScenarioTestCase):
 
         self.assertEqual(result.status, 0, result.output)
         commands, maintainer = result.output.split("\nMaintainer commands\n")
-        for synopsis in ("ralph run <spec>", "ralph upgrade [<version>]", "ralph help"):
+        for synopsis in ("ralph run <spec>", "ralph watch <spec>", "ralph upgrade [<version>]", "ralph help"):
             self.assertIn("\n  " + synopsis + "\n", commands)
         self.assertIn("\n  ralph sync-skills [<skills-dir>]\n", maintainer)
         self.assertIn("Moves the project's pin (.ralph/pin) to the newest released ralph version", commands)
