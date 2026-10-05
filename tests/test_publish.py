@@ -1,6 +1,7 @@
 """The publish command: the one deliberate step that pushes the integration branch and opens the pull request."""
 
 import os
+import re
 import unittest
 
 from tests.harness import SPEC_TITLE, ScenarioTestCase
@@ -141,6 +142,67 @@ class WithoutADraft(ScenarioTestCase):
             result.output, "ralph: there is no run to publish in this project; start one with `ralph run <spec>`\n"
         )
         self.assertEqual(s.pull_requests(), [])
+
+
+def published_run(s):
+    """A clean run, ready to publish to a remote."""
+    s.add_remote()
+    s.ticket(2)
+    assert s.ralph("run", "1").status == 0
+
+
+class WhileWaiting(ScenarioTestCase):
+    def test_pushing_writes_plain_progress_lines(self):
+        s = self.scenario()
+        published_run(s)
+        s.remote_delays(0.6)
+
+        result = s.ralph("publish", RALPH_PROGRESS_INTERVAL="0.2")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertIn(f"ralph: working: pushing {BRANCH}, 0s\n", result.output)
+        self.assertIsNone(re.search(r"[\x00-\x08\x0b-\x1f\x7f]", result.output), repr(result.output))
+
+    def test_opening_the_pull_request_writes_plain_progress_lines(self):
+        s = self.scenario()
+        published_run(s)
+        s.tracker_delays(0.6, only="pr create")
+
+        result = s.ralph("publish", RALPH_PROGRESS_INTERVAL="0.2")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertIn(f"ralph: working: GitHub: opening a pull request of {BRANCH}, 0s\n", result.output)
+
+
+class InterruptedOnATerminal(ScenarioTestCase):
+    def assertNothingLeftBehind(self, result, label):
+        self.assertIn("\x1b[?25l", result.raw, "the indicator was never drawn")
+        self.assertIn(label, result.raw, "the indicator was never drawn")
+        self.assertEqual([line for line in result.screen.lines() if label in line], [], result)
+        self.assertIn("ralph: interrupted", result.screen.lines(), result)
+        self.assertTrue(result.screen.cursor_visible, result)
+
+    def test_while_pushing_leaves_the_terminal_usable(self):
+        s = self.scenario()
+        published_run(s)
+        s.remote_delays(30)
+
+        result = s.ralph_on_terminal("publish", interrupt_when=f"pushing {BRANCH}")
+
+        self.assertEqual(result.status, 130, result)
+        self.assertNothingLeftBehind(result, "pushing ")
+        self.assertEqual(s.pull_requests(), [])
+
+    def test_while_opening_the_pull_request_leaves_the_terminal_usable(self):
+        s = self.scenario()
+        published_run(s)
+        s.tracker_delays(30, only="pr create")
+
+        result = s.ralph_on_terminal("publish", columns=200, interrupt_when="GitHub: opening a pull request")
+
+        self.assertEqual(result.status, 130, result)
+        self.assertIn(f"ralph: pushed {BRANCH}", result.screen.lines())
+        self.assertNothingLeftBehind(result, "GitHub: ")
 
 
 if __name__ == "__main__":

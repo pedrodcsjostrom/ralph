@@ -7,11 +7,14 @@ status it is asked for, so hand-over is observable without the real loop.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+
+from tests import terminal
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WRAPPER = os.path.join(ROOT, "wrapper", "ralph")
@@ -25,6 +28,18 @@ print("args %r" % (sys.argv[1:],))
 print("cwd %s" % os.getcwd())
 sys.exit(int(os.environ.get("STAND_IN_EXIT", "0")))
 """
+
+
+# Stands in for git on a slow network: every git command takes $SLOW_GIT seconds longer.
+SLOW_GIT = """\
+#!%s
+import os, sys, time
+time.sleep(float(os.environ.get("SLOW_GIT") or 0))
+os.execv(%r, ["git"] + sys.argv[1:])
+"""
+
+# Anything a log file should never hold: escape sequences, carriage returns and other control characters.
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
 class Result:
@@ -53,12 +68,17 @@ class WrapperWorld:
             f.write("[user]\n\tname = ralph\n\temail = ralph@example.com\n[init]\n\tdefaultBranch = main\n")
         # A URL, so the fetch goes through git's transport as it does for the public one.
         self.repository = "file://" + self.public
+        self.bin = os.path.join(root, "bin")
+        os.makedirs(self.bin)
+        with open(os.path.join(self.bin, "git"), "w") as f:
+            f.write(SLOW_GIT % (sys.executable, shutil.which("git")))
+        os.chmod(os.path.join(self.bin, "git"), 0o755)
         self.git(self.public, "init", "-q")
         shutil.copy(WRAPPER, os.path.join(self.project, "ralph"))
 
     def env(self, **extra):
         env = {
-            "PATH": os.environ.get("PATH", ""),
+            "PATH": self.bin + os.pathsep + os.environ.get("PATH", ""),
             "HOME": self.home,
             "GIT_CONFIG_GLOBAL": self.gitconfig,
             "GIT_CONFIG_NOSYSTEM": "1",
@@ -97,6 +117,15 @@ class WrapperWorld:
             text=True,
         )
         return Result(proc.returncode, proc.stdout)
+
+    def wrapper_on_terminal(self, *args, interrupt_when=None, **env):
+        """Runs the wrapper on a pseudo-terminal (see tests/terminal.py), typing Ctrl-C once interrupt_when shows."""
+        return terminal.run(
+            [sys.executable, os.path.join(self.project, "ralph"), *args],
+            cwd=self.project,
+            env=self.env(TERM="xterm-256color", LANG="C.UTF-8", **env),
+            interrupt_when=interrupt_when,
+        )
 
     def cached(self):
         """The entries of the per-user cache's ralph directory."""
@@ -159,7 +188,6 @@ class WrapperTest(unittest.TestCase):
         self.assertEqual(result.status, 1, result.output)
         self.assertEqual(
             result.output,
-            "ralph: fetching ralph v9\n"
             f"ralph: the pinned version v9 does not exist in {w.repository} (pin: .ralph/pin)\n",
         )
         self.assertEqual(w.cached(), [])
@@ -173,7 +201,7 @@ class WrapperTest(unittest.TestCase):
         result = w.wrapper("run", "1")
 
         self.assertEqual(result.status, 1, result.output)
-        self.assertTrue(result.output.startswith("ralph: fetching ralph v1\n"), result.output)
+        self.assertTrue(result.output.startswith("ralph: could not fetch"), result.output)
         self.assertIn(f"ralph: could not fetch ralph v1 from {w.repository}:\n", result.output)
         self.assertEqual(w.cached(), [])
 
@@ -224,14 +252,78 @@ class WrapperTest(unittest.TestCase):
         self.assertEqual(os.listdir(elsewhere), ["v1"])
         self.assertEqual(w.cached(), [])
 
-    def test_the_first_run_says_it_is_fetching(self):
+    def test_a_slow_fetch_writes_plain_progress_lines_naming_the_version_and_the_step(self):
         w = self.world()
         w.release("v1")
         w.pin("v1")
 
-        result = w.wrapper()
+        result = w.wrapper(SLOW_GIT="0.5", RALPH_PROGRESS_INTERVAL="0.2")
 
-        self.assertTrue(result.output.startswith("ralph: fetching ralph v1\n"), result.output)
+        self.assertEqual(result.status, 0, result.output)
+        lines = [line for line in result.output.splitlines() if line.startswith("ralph: working: ")]
+        self.assertGreaterEqual(len(lines), 4, result.output)
+        for line in lines:
+            self.assertRegex(line, r"^ralph: working: fetching ralph v1, \ds, git (ls-remote|init|fetch|checkout)$")
+        self.assertIsNone(CONTROL.search(result.output), repr(result.output))
+        self.assertIn("ralph v1\n", result.output)
+
+    def test_a_quick_fetch_writes_no_progress(self):
+        w = self.world()
+        w.release("v1")
+        w.pin("v1")
+
+        result = w.wrapper("run", "1")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(result.output.splitlines()[0], "ralph v1")
+
+    def test_an_unusable_progress_interval_is_refused(self):
+        w = self.world()
+        w.release("v1")
+        w.pin("v1")
+
+        result = w.wrapper(RALPH_PROGRESS_INTERVAL="soon")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertEqual(
+            result.output, "ralph: RALPH_PROGRESS_INTERVAL must be a number of seconds above 0, not 'soon'\n"
+        )
+
+
+class OnATerminal(unittest.TestCase):
+    def world(self):
+        root = tempfile.mkdtemp(prefix="ralph-wrapper-test-")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        return WrapperWorld(os.path.realpath(root))
+
+    def assertNothingLeftBehind(self, result):
+        self.assertIn("\x1b[?25l", result.raw, "the indicator was never drawn")
+        self.assertIn("fetching ralph v1, 0s, git ", result.raw, "the indicator was never drawn")
+        self.assertEqual([line for line in result.screen.lines() if "fetching" in line], [], result)
+        self.assertTrue(result.screen.cursor_visible, result)
+
+    def test_a_fetch_shows_the_indicator_and_takes_it_away_before_handing_over(self):
+        w = self.world()
+        w.release("v1")
+        w.pin("v1")
+
+        result = w.wrapper_on_terminal("run", "1", SLOW_GIT="0.3")
+
+        self.assertEqual(result.status, 0, result)
+        self.assertEqual([line for line in result.screen.lines() if line][:2], ["ralph v1", "args ['run', '1']"])
+        self.assertNothingLeftBehind(result)
+
+    def test_an_interrupt_during_a_fetch_takes_the_indicator_away_and_caches_nothing(self):
+        w = self.world()
+        w.release("v1")
+        w.pin("v1")
+
+        result = w.wrapper_on_terminal("run", "1", SLOW_GIT="30", interrupt_when="git ls-remote")
+
+        self.assertEqual(result.status, 130, result)
+        self.assertIn("ralph: interrupted", result.screen.lines(), result)
+        self.assertNothingLeftBehind(result)
+        self.assertEqual(w.cached(), [])
 
 
 if __name__ == "__main__":
