@@ -12,8 +12,9 @@ from ralph.errors import RalphError
 # Agents' commits and pull requests carry no attribution trailer.
 SETTINGS = json.dumps({"attribution": {"commit": "", "pr": ""}})
 
-HEADLESS = ["--print", "--verbose", "--output-format", "stream-json", "--settings", SETTINGS]
-PERMISSIONS = ["--permission-mode", "auto"]
+# Every launch, headless or interactive, gets these.
+COMMON = ["--settings", SETTINGS, "--permission-mode", "auto"]
+HEADLESS = ["--print", "--verbose", "--output-format", "stream-json"]
 
 
 def problems() -> list[str]:
@@ -41,6 +42,20 @@ class Agent:
         # The project's extra flags, after ralph's own so they can refine them.
         self.flags = list(flags)
 
+    def _command(self, mode: Sequence[str]) -> list[str]:
+        """The claude command line for a launch in mode, without the prompt."""
+        return ["claude"] + list(mode) + COMMON + self.flags
+
+    def interactive(self, prompt: str) -> int:
+        """Opens an interactive session on the runner's terminal, starting from prompt. Returns its exit status.
+
+        Claude Code takes an interactive session's first prompt as an argument; stdin is the terminal.
+        """
+        try:
+            return subprocess.run(self._command([]) + [prompt], cwd=self.directory).returncode
+        except OSError as e:
+            raise RalphError(f"could not start Claude Code: {e}") from e
+
     def run(self, prompt: str, log_path: str, on_prose: Callable[[str], None]) -> str:
         """Runs one headless iteration in a fresh context window and returns the agent's final message.
 
@@ -49,7 +64,7 @@ class Agent:
         """
         try:
             agent = subprocess.Popen(
-                ["claude"] + HEADLESS + PERMISSIONS + self.flags,
+                self._command(HEADLESS),
                 cwd=self.directory,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,

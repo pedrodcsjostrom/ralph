@@ -44,6 +44,17 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("spec", metavar="<spec>", type=_issue_number, help="the spec's issue number")
     run.set_defaults(handler=_run)
 
+    watch = commands.add_parser(
+        "watch",
+        help="watch one iteration in an interactive session",
+        description="Opens an interactive Claude Code session on the ticket an unattended run would implement next, "
+        "on the same integration branch and with the same prompt, which also tells the agent you are there to "
+        "answer questions. Closes nothing: when the session ends, close the ticket yourself once you are happy "
+        "with its commits. Use it to watch one iteration before leaving a run unattended.",
+    )
+    watch.add_argument("spec", metavar="<spec>", type=_issue_number, help="the spec's issue number")
+    watch.set_defaults(handler=_watch)
+
     upgrade = commands.add_parser(
         "upgrade",
         help="move the project's pin to a newer ralph version",
@@ -92,11 +103,21 @@ def require_tools() -> None:
         raise RalphError("cannot start:\n" + "\n".join("  - " + p for p in found))
 
 
-def _run(args: argparse.Namespace, console: Console) -> int:
+def _loop(spec: int, console: Console) -> Loop:
+    """The loop for spec in the project, once the machine and the configuration are known to be fit."""
     require_tools()
     repo = Checkout(project.root(os.environ))
     config = Config.load(repo.root, os.environ)
-    Loop(args.spec, Tracker(repo.root), Agent(repo.root, config.agent_flags), repo, console, config).run()
+    return Loop(spec, Tracker(repo.root), Agent(repo.root, config.agent_flags), repo, console, config)
+
+
+def _run(args: argparse.Namespace, console: Console) -> int:
+    _loop(args.spec, console).run()
+    return 0
+
+
+def _watch(args: argparse.Namespace, console: Console) -> int:
+    _loop(args.spec, console).watch()
     return 0
 
 

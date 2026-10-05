@@ -61,6 +61,9 @@ class Loop:
     def run(self) -> None:
         """Implements and reviews until a review round is clean. Raises RalphError when the run cannot end cleanly."""
         self._start()
+        self.run_dir = runs.create(self.checkout.root)
+        self.record = RunRecord(spec=self.spec, branch=self.branch, base=self.base)
+        self.record.save(self.run_dir)
         self.console.say(f"spec #{self.spec} on {self.branch}, base {self.base[:9]}, logs in {self.run_dir}")
         try:
             self._rounds()
@@ -76,6 +79,32 @@ class Loop:
             f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
         )
         self.console.say("nothing was pushed. Look it over, then open the pull request.")
+
+    def watch(self) -> None:
+        """Opens an interactive session on the ticket an unattended run would implement next, and closes nothing.
+
+        It starts exactly as a run does, so the session sees the same branch, ticket and prompt,
+        except that the prompt tells the agent a human is present.
+        """
+        self._start()
+        ready = frontier(self.tracker.tickets(self.spec))
+        if not ready:
+            raise RalphError(f"no ticket of spec #{self.spec} is on the frontier")
+        n = ready[0].number
+        self.console.say(f"ticket #{n} of spec #{self.spec} on {self.branch}")
+        prompt = prompts.implement(
+            self.context,
+            self.tracker.ticket_details(n),
+            fixed_point=self.checkout.head(),
+            commits=self.checkout.commits(self.base, limit=prompts.RECENT_COMMITS),
+            watched=True,
+        )
+        status = self.agent.interactive(prompt)
+        if status != 0:
+            raise RalphError(f"the session on #{n} ended with exit status {status}; #{n} stays open")
+        self.console.say(
+            f"#{n} stays open. When the work is good, close it: gh issue close {n} --repo {self.tracker.repo}"
+        )
 
     def _rounds(self) -> None:
         """Implements the frontier, then reviews, until a review round finds nothing or nothing is left to review.
@@ -166,9 +195,6 @@ class Loop:
             branch=branch,
             rules={kind: project.rules(self.checkout.root, kind) for kind in project.RULES},
         )
-        self.run_dir = runs.create(self.checkout.root)
-        self.record = RunRecord(spec=self.spec, branch=branch, base=self.base)
-        self.record.save(self.run_dir)
 
     def _run_base(self, main: str) -> str:
         """The configured run base, or else the merge base of HEAD with the main branch."""

@@ -40,8 +40,17 @@ def _with_rules(run: RunContext, kind: str) -> list[str]:
     return lines
 
 
-def implement(run: RunContext, ticket: TicketDetails, fixed_point: str, commits: Sequence[Commit]) -> str:
-    """The prompt for one attempt at a ticket. commits are the integration branch's, newest first."""
+# The run context line that tells a watched iteration's agent it is not alone.
+WATCHED = "- A human is watching this iteration and will close the ticket: you may ask them questions."
+
+
+def implement(
+    run: RunContext, ticket: TicketDetails, fixed_point: str, commits: Sequence[Commit], watched: bool = False
+) -> str:
+    """The prompt for one attempt at a ticket. commits are the integration branch's, newest first.
+
+    A watched attempt is an interactive session with a human present.
+    """
     log = "\n".join(f"{c.short} {c.date}\n{c.message}\n---" for c in commits)
     return "\n".join(
         _with_rules(run, "implement")
@@ -52,6 +61,9 @@ def implement(run: RunContext, ticket: TicketDetails, fixed_point: str, commits:
             f"- Integration branch: {run.branch}",
             f"- Ticket: #{ticket.number}",
             f"- Fixed point, the commit to review your work against: {fixed_point}",
+        ]
+        + ([WATCHED] if watched else [])
+        + [
             "",
             "### The ticket",
             "",
