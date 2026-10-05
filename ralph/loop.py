@@ -186,8 +186,9 @@ class Loop:
         title = self.tracker.spec_title(self.spec)
         if not self.tracker.tickets(self.spec):
             raise RalphError(
-                f"spec #{self.spec} has no tickets. Split it into tickets first: sub-issues of #{self.spec} "
-                f"labelled {READY}, with their blockers recorded as issue dependencies."
+                f"spec #{self.spec} has no tickets. Split it into tickets first with `ralph split {self.spec}`, "
+                f"or by hand: sub-issues of #{self.spec} labelled {READY}, with their blockers recorded as issue "
+                "dependencies."
             )
 
         # The whole spec lands on one integration branch and main never gets a

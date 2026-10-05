@@ -190,7 +190,9 @@ class RefusesToStart(ScenarioTestCase):
 
     def test_on_a_spec_with_no_tickets(self):
         s = self.scenario()
-        self.assertRefused(s, s.ralph("run", "1"), "spec #1 has no tickets. Split it into tickets first")
+        self.assertRefused(
+            s, s.ralph("run", "1"), "spec #1 has no tickets. Split it into tickets first with `ralph split 1`"
+        )
 
     def test_outside_a_git_repository(self):
         s = self.scenario()

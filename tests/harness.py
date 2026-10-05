@@ -165,6 +165,12 @@ class Scenario:
         agent.setdefault("reviews", {})[str(round_)] = {"findings": text, "also": also}
         self._write_state("agent", agent)
 
+    def split_creates(self, *titles, status=0):
+        """What a session splitting the spec does: opens tickets titled titles, then exits with status."""
+        agent = self._read_state("agent")
+        agent.setdefault("splits", {})[str(SPEC)] = {"tickets": list(titles), "status": status}
+        self._write_state("agent", agent)
+
     def agent_ignores_settings(self):
         """The agent's CLI silently drops the settings it is launched with, as Claude Code does with invalid ones."""
         agent = self._read_state("agent")
@@ -196,11 +202,13 @@ class Scenario:
         return [c for c in calls if tool is None or c["tool"] == tool]
 
     def events(self):
-        """Agent runs and tracker mutations, in order, as short strings like "agent #3", "review 1" and "close #3"."""
+        """Agent runs and tracker mutations, in order, as short strings like "agent #3", "split #1" and "close #3"."""
         events = []
         for call in self.calls():
             if call["tool"] == "claude" and "ticket" in call:
                 events.append(f"agent #{call['ticket']}")
+            elif call["tool"] == "claude" and "split" in call:
+                events.append(f"split #{call['split']}")
             elif call["tool"] == "claude" and "review" in call:
                 events.append(f"review {call['review']}")
             elif call["tool"] == "gh" and "mutation" in call:

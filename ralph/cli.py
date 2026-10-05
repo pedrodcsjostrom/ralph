@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from types import ModuleType
 from typing import Optional
 
-from ralph import agent, checkout, draft, manual, pin, progress, project, runs, skill_sync, tracker
+from ralph import agent, checkout, draft, manual, pin, progress, project, prompts, runs, skill_sync, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
@@ -56,6 +56,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     watch.add_argument("spec", metavar="<spec>", type=_issue_number, help="the spec's issue number")
     watch.set_defaults(handler=_watch)
+
+    split = commands.add_parser(
+        "split",
+        help="split a spec into tickets in an interactive session",
+        description="Opens an interactive Claude Code session that splits the spec into tickets with the bundled "
+        "ralph:to-tickets skill, agreeing the breakdown with you before it opens any. The tickets are what a run "
+        "implements: sub-issues of the spec labelled ready-for-agent, with their blockers recorded as issue "
+        "dependencies. Run it on a spec before its first run.",
+    )
+    split.add_argument("spec", metavar="<spec>", type=_issue_number, help="the spec's issue number")
+    split.set_defaults(handler=_split)
 
     publish = commands.add_parser(
         "publish",
@@ -136,6 +147,29 @@ def _run(args: argparse.Namespace, console: Console) -> int:
 
 def _watch(args: argparse.Namespace, console: Console) -> int:
     _loop(args.spec, console).watch()
+    return 0
+
+
+def _split(args: argparse.Namespace, console: Console) -> int:
+    require_tools(checkout, tracker, agent)
+    root = project.root(os.environ)
+    config = Config.load(root, os.environ)
+    tracker_ = Tracker(root, console.progress)
+    title = tracker_.spec_title(args.spec)
+    claude = Agent(root, config.agent_flags)
+    with console.progress.waiting("Claude Code: checking it resolves the bundled skills"):
+        claude.check()
+    console.say(f"splitting spec #{args.spec} into tickets in an interactive session")
+    status = claude.interactive(prompts.split(args.spec, title, tracker_.repo))
+    tickets = len(tracker_.tickets(args.spec))
+    count = f"{tickets} ticket{'' if tickets == 1 else 's'}"
+    if status != 0:
+        raise RalphError(
+            f"the session splitting spec #{args.spec} ended with exit status {status}; spec #{args.spec} has {count}"
+        )
+    if not tickets:
+        raise RalphError(f"the session ended and spec #{args.spec} still has no tickets")
+    console.say(f"spec #{args.spec} has {count}; implement them with `ralph run {args.spec}`")
     return 0
 
 

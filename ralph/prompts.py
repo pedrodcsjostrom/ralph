@@ -98,3 +98,11 @@ def review(run: RunContext, fixed_point: str, round_: int, findings_file: str, f
         names = ", ".join(f"#{n}" for n in fix_tickets)
         lines.append(f"- This diff holds only the fixes for the previous review round's fix tickets: {names}")
     return "\n".join(lines + [""])
+
+
+def split(spec: int, title: str, repo: str) -> str:
+    """The first prompt of an interactive session splitting spec into tickets."""
+    return "\n".join(
+        [f"/ralph:to-tickets #{spec}", "", _instructions("split"), "", "## Run context", ""]
+        + [f"- Spec: #{spec} in {repo}", f"- Spec title: {title}", ""]
+    )

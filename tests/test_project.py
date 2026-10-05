@@ -217,6 +217,7 @@ class Help(ScenarioTestCase):
         for synopsis in (
             "ralph run <spec>",
             "ralph watch <spec>",
+            "ralph split <spec>",
             "ralph publish [--force]",
             "ralph upgrade [<version>]",
             "ralph help",
@@ -224,6 +225,9 @@ class Help(ScenarioTestCase):
             self.assertIn("\n  " + synopsis + "\n", commands)
         self.assertIn("\n  ralph sync-skills [<skills-dir>]\n", maintainer)
         self.assertIn("Moves the project's pin (.ralph/pin) to the newest released ralph version", commands)
+        self.assertIn(
+            "splits the spec into tickets with the bundled ralph:to-tickets skill", " ".join(commands.split())
+        )
         self.assertIn("did not end cleanly; --force publishes it anyway.", " ".join(commands.split()))
 
     def test_help_lists_every_configuration_key_with_its_environment_variable_and_default(self):

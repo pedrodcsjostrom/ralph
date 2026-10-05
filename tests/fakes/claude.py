@@ -23,7 +23,12 @@ announcing its tool call, as a real agent does while a long command runs.
 
 An interactive session (no `--print`) takes its prompt as the last argument,
 acts on the ticket's next behaviour in the same way, and records the call with
-"interactive": true. It prints a line of prose instead of events.
+"interactive": true. It prints a line of prose instead of events. A session
+started with `/ralph:to-tickets #<spec>` splits the spec instead: it opens the
+tickets queued for it in "splits" through the fake gh, as sub-issues of the
+spec labelled ready-for-agent, then exits with the queued status (default 0):
+
+    {"splits": {"1": {"tickets": ["Sort by name"], "status": 0}}}
 
 A headless `/context` prompt, given as an argument, is the start-up check: it
 emits the init event a real CLI would for the plugins given with --plugin-dir,
@@ -345,12 +350,35 @@ def headless(state, options, positionals, call):
     emit({"type": "result", "subtype": "success", "result": final})
 
 
+def gh(*args, input=None):
+    """Calls the tracker as a real session would, through the gh on the path (the fake tracker)."""
+    return subprocess.run(("gh",) + args, input=input, check=True, stdout=subprocess.PIPE, text=True).stdout
+
+
+def split(state, spec, prompt, call):
+    """A to-tickets session: opens the tickets queued in "splits" as sub-issues of the spec, then ends."""
+    call.update(split=spec)
+    repo = re.search(r"^- Spec: #\d+ in (\S+)$", prompt, re.M).group(1)
+    plan = state.get("splits", {}).get(str(spec), {})
+    for title in plan.get("tickets", []):
+        fields = json.dumps({"title": title, "body": "", "labels": ["ready-for-agent"]})
+        created = json.loads(gh("api", f"repos/{repo}/issues", "--method", "POST", "--input", "-", input=fields))
+        gh("api", f"repos/{repo}/issues/{spec}/sub_issues", "--method", "POST", "-F", f"sub_issue_id={created['id']}")
+    if plan.get("status"):
+        sys.exit(plan["status"])
+    print(f"Fake interactive session splitting spec #{spec} ended.")
+
+
 def interactive(state, positionals, call):
     if len(positionals) != 1:
         sys.stderr.write(f"fake claude: expected the prompt as the only argument, got {positionals}\n")
         sys.exit(2)
     prompt = positionals[0]
     call.update(interactive=True, prompt=prompt)
+    to_tickets = re.match(r"/ralph:to-tickets #(\d+)\n", prompt)
+    if to_tickets:
+        split(state, int(to_tickets.group(1)), prompt, call)
+        return
     match = re.search(r"^- Ticket: #(\d+)$", prompt, re.M)
     if not match:
         sys.stderr.write("fake claude: no ticket in the prompt\n")
