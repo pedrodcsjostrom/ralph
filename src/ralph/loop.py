@@ -21,7 +21,9 @@ from ralph.errors import AlreadyReported, RalphError
 from ralph.record import ReviewRoundRecord, RunOutcome, RunRecord, TicketOutcome
 from ralph.tracker import READY, Ticket, Tracker
 
-COMPLETE = "<promise>TICKET COMPLETE</promise>"
+# How an agent ends its final message on a ticket.
+PROMISE_COMPLETE = "<promise>TICKET COMPLETE</promise>"
+PROMISE_BLOCKED = "<promise>TICKET BLOCKED</promise>"
 
 
 def frontier(tickets: Iterable[Ticket], leave_alone: Iterable[int] = ()) -> list[Ticket]:
@@ -275,7 +277,7 @@ class _Run:
         with self.console.waiting(label) as wait:
             final = self.agent.run(prompt, log, self.console.prose, wait.doing, self.console.passthrough)
             self._check_checkout(f"iteration {self.iteration} (ticket #{n})")
-            reason = self._not_done(final, before) or self._verify(n)
+            reason = self._not_done(n, attempt, final, before) or self._verify(n)
         if reason is None:
             commits = list(reversed(self.checkout.commits(before)))
             self.tracker.close(n, f"Implemented by ralph on `{self.branch}`: {' '.join(c.short for c in commits)}")
@@ -337,10 +339,19 @@ class _Run:
             where = "HEAD detached" if branch is None else f"the checkout on {branch}"
             raise RalphError(f"{culprit} left {where}, off {self.branch}; switch back, then rerun")
 
-    def _not_done(self, final: str, before: str) -> Optional[str]:
-        """Why the attempt that started at before did not finish its ticket, or None if it did."""
-        if COMPLETE not in final:
-            return "the agent did not report it complete"
+    def _not_done(self, number: int, attempt: int, final: str, before: str) -> Optional[str]:
+        """Why the attempt that started at before did not finish its ticket, or None if it did.
+
+        An agent that reports the ticket blocked says why in its final message; that goes on the
+        ticket, where the next attempt reads it, since agents never touch issues themselves.
+        """
+        if PROMISE_COMPLETE not in final:
+            if PROMISE_BLOCKED not in final:
+                return "the agent did not report it complete"
+            said = final[: final.index(PROMISE_BLOCKED)].strip()
+            quoted = "\n".join(f"> {line}".rstrip() for line in said.splitlines()) or "> (no reason given)"
+            self.tracker.comment(number, f"ralph: attempt {attempt} ended blocked. The agent said:\n\n{quoted}")
+            return "the agent reported it blocked"
         if self.checkout.head() == before:
             return "the agent reported it complete but made no commit"
         return None

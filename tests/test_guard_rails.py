@@ -1,5 +1,6 @@
 """The guard rails of an unattended run: attempts, verify, the checkout invariants and the iteration budget."""
 
+import json
 import unittest
 
 from tests.harness import ScenarioTestCase
@@ -15,7 +16,7 @@ class Attempts(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 1, result.output)
-        self.assertEqual(s.events(), ["agent #2", "agent #2", "agent #3", "close #3"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2", "agent #2", "comment #2", "agent #3", "close #3"])
         self.assertEqual(s.issue(2)["state"], "open")
         self.assertIn("giving up on #2 after 2 attempts", result.output)
         self.assertIn(
@@ -30,7 +31,7 @@ class Attempts(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertEqual(s.events(), ["agent #2", "agent #2", "close #2", "review 1"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2", "agent #2", "close #2", "review 1"])
         self.assertIn("=== [2/30] ticket #2, attempt 2/2 ===", result.output)
 
     def test_the_attempt_budget_comes_from_the_environment(self):
@@ -41,7 +42,7 @@ class Attempts(ScenarioTestCase):
         result = s.ralph("run", "1", RALPH_MAX_ATTEMPTS="3")
 
         self.assertEqual(result.status, 1, result.output)
-        self.assertEqual(s.events(), ["agent #2", "agent #2", "agent #2"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2"] * 3)
         self.assertIn("giving up on #2 after 3 attempts", result.output)
 
     def test_a_budget_that_is_not_a_positive_whole_number_is_refused(self):
@@ -56,6 +57,39 @@ class Attempts(ScenarioTestCase):
                     self.assertEqual(result.status, 1, result.output)
                     self.assertIn(f"ralph: {name} must be a whole number of at least 1, not {value!r}", result.output)
                     self.assertEqual(s.events(), [])
+
+
+class Blocked(ScenarioTestCase):
+    def test_the_reason_a_blocked_agent_gives_is_commented_on_the_ticket_for_the_next_attempt(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_does(2, "blocked", "complete")
+
+        result = s.ralph("run", "1")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(s.events(), ["agent #2", "comment #2", "agent #2", "close #2", "review 1"])
+        comment = s.issue(2)["comments"][0]
+        self.assertEqual(
+            comment,
+            "ralph: attempt 1 ended blocked. The agent said:\n\n"
+            "> Ticket #2 is half done: the spec does not say how to order equal widgets.",
+        )
+        # The next attempt reads it among the ticket's comments.
+        self.assertIn(json.dumps(comment), s.prompts()[1])
+        self.assertIn("ralph: #2 stays open, the agent reported it blocked", result.output)
+
+    def test_agents_are_told_to_give_the_reason_in_their_final_message_and_never_to_comment(self):
+        s = self.scenario()
+        s.ticket(2)
+
+        s.ralph("run", "1")
+
+        implement, review = (" ".join(prompt.split()) for prompt in s.prompts())
+        self.assertNotIn("gh issue comment", implement)
+        self.assertIn("Do not create, close, label, comment on or edit any issue.", implement)
+        self.assertIn("end your final message by saying what is done and what blocks the rest", implement)
+        self.assertNotIn("gh issue comment", review)
 
 
 class Verify(ScenarioTestCase):
@@ -112,7 +146,9 @@ class Verify(ScenarioTestCase):
 
         s.ralph("run", "1", RALPH_VERIFY="exit 1", RALPH_MAX_ATTEMPTS="1")
 
-        self.assertEqual(s.events(), ["agent #2"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2"])
+        [comment] = s.issue(2)["comments"]
+        self.assertTrue(comment.startswith("ralph: attempt 1 ended blocked."), comment)
 
 
 class CheckoutInvariants(ScenarioTestCase):
@@ -210,7 +246,7 @@ class IterationBudget(ScenarioTestCase):
         result = s.ralph("run", "1", RALPH_MAX_ITERATIONS="2", RALPH_MAX_ATTEMPTS="3")
 
         self.assertEqual(result.status, 1, result.output)
-        self.assertEqual(s.events(), ["agent #2", "agent #2"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2"] * 2)
         self.assertIn("=== [2/2] ticket #2, attempt 2/3 ===", result.output)
         self.assertIn("the iteration budget (2) is spent", result.output)
 

@@ -32,7 +32,7 @@ class Configuration(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 1, result.output)
-        self.assertEqual(s.events(), ["agent #2", "agent #2", "agent #2"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2"] * 3)
         self.assertIn("=== [3/7] ticket #2, attempt 3/3 ===", result.output)
 
     def test_an_environment_variable_overrides_the_file_for_one_run(self):
@@ -43,7 +43,7 @@ class Configuration(ScenarioTestCase):
 
         result = s.ralph("run", "1", RALPH_MAX_ATTEMPTS="1")
 
-        self.assertEqual(s.events(), ["agent #2"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2"])
         self.assertIn("giving up on #2 after 1 attempts", result.output)
 
     def test_an_empty_environment_variable_turns_the_files_verify_off_for_one_run(self):

@@ -230,7 +230,9 @@ class ClosesOnlyCompletedTickets(ScenarioTestCase):
                 result = s.ralph("run", "1", RALPH_MAX_ATTEMPTS="1")
 
                 self.assertEqual(result.status, 1, result.output)
-                self.assertEqual(s.events(), ["agent #2", "agent #3", "close #3"])
+                # Only a blocked agent has a reason for the loop to comment on the ticket.
+                commented = ["comment #2"] if behaviour == "blocked" else []
+                self.assertEqual(s.events(), ["agent #2", *commented, "agent #3", "close #3"])
                 self.assertEqual(s.issue(2)["state"], "open")
                 self.assertIn(
                     "these tickets are open and nothing on the frontier can be implemented:\n#2 Ticket 2", result.output
@@ -245,7 +247,7 @@ class ClosesOnlyCompletedTickets(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 1, result.output)
-        self.assertEqual(s.events(), ["agent #2", "agent #2"])
+        self.assertEqual(s.events(), ["agent #2", "comment #2"] * 2)
         self.assertIn("#2 Ticket 2\n#3 Ticket 3", result.output)
 
 
@@ -269,7 +271,9 @@ class Rerun(ScenarioTestCase):
                 "agent #2",
                 "close #2",
                 "agent #3",
+                "comment #3",
                 "agent #3",
+                "comment #3",
                 "agent #3",
                 "close #3",
                 "agent #4",
@@ -365,7 +369,7 @@ class TheAgent(ScenarioTestCase):
         for rule in (
             "<promise>TICKET BLOCKED</promise>",
             "Do not create or switch branches, push, merge, or open a pull request.",
-            "Do not close, label or edit any issue.",
+            "Do not create, close, label, comment on or edit any issue.",
             "Never use `git stash`",
             "names the ticket as `(#<ticket>)`",
             "No `Co-Authored-By`",

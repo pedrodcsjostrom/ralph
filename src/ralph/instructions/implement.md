@@ -25,7 +25,7 @@ Where they are not, test at the public interface the ticket's acceptance criteri
 
 - Work on this ticket only.
 - Commit to the current branch. Do not create or switch branches, push, merge, or open a pull request.
-- Do not close, label or edit any issue. The loop closes the ticket when you report it complete.
+- Do not create, close, label, comment on or edit any issue. The loop closes the ticket when you report it complete.
 - Every commit message names the ticket as `(#<ticket>)`, and carries the key decisions you took and anything the next iteration needs to know.
 - No `Co-Authored-By` or other attribution trailer on any commit.
 - Never use `git stash`; the stash is shared with other checkouts.
@@ -39,7 +39,7 @@ When every acceptance criterion is met, the suites you ran are green and the wor
 
 <promise>TICKET COMPLETE</promise>
 
-If you cannot finish, commit the part that is sound and green, discard the rest, and leave a comment on the ticket (`gh issue comment <ticket> --body ...`) saying what is done and what blocks the rest.
-Then end your final message with:
+If you cannot finish, commit the part that is sound and green, and discard the rest.
+Then end your final message by saying what is done and what blocks the rest, followed by:
 
 <promise>TICKET BLOCKED</promise>

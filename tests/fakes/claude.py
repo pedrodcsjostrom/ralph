@@ -344,6 +344,8 @@ def headless(state, options, positionals, call):
     time.sleep(state.get("pause", 0))
     emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_fake"}]}})
     final = f"Fake agent finished ticket #{ticket}."
+    if promise == "TICKET BLOCKED":
+        final = f"Ticket #{ticket} is half done: the spec does not say how to order equal widgets."
     if promise:
         final += f" <promise>{promise}</promise>"
     emit({"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}})
