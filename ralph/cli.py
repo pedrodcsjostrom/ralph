@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from types import ModuleType
 from typing import Optional
 
-from ralph import agent, checkout, draft, manual, pin, project, runs, skill_sync, tracker
+from ralph import agent, checkout, draft, manual, pin, progress, project, runs, skill_sync, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
@@ -123,7 +123,7 @@ def _loop(spec: int, console: Console) -> Loop:
     require_tools(checkout, tracker, agent)
     repo = Checkout(project.root(os.environ))
     config = Config.load(repo.root, os.environ)
-    return Loop(spec, Tracker(repo.root), Agent(repo.root, config.agent_flags), repo, console, config)
+    return Loop(spec, Tracker(repo.root, console.progress), Agent(repo.root, config.agent_flags), repo, console, config)
 
 
 def _run(args: argparse.Namespace, console: Console) -> int:
@@ -195,6 +195,10 @@ def main(argv: list[str], console: Optional[Console] = None) -> int:
     console = console or Console()
     args = _parser().parse_args(argv)
     try:
+        try:
+            console.progress.interval = progress.interval(os.environ)
+        except ValueError as e:
+            raise RalphError(str(e)) from None
         return args.handler(args, console)
     except Reported as e:
         return e.status

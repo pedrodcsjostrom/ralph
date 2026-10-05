@@ -24,6 +24,8 @@ import sys
 import tempfile
 import unittest
 
+from tests import terminal
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RALPH = os.path.join(ROOT, "bin", "ralph")
 FAKES = os.path.join(ROOT, "tests", "fakes")
@@ -125,6 +127,12 @@ class Scenario:
         tracker["logged_in"] = logged_in
         self._write_state("tracker", tracker)
 
+    def tracker_delays(self, seconds):
+        """Makes every call to the tracker take seconds, as a slow network does."""
+        tracker = self._read_state("tracker")
+        tracker["delay"] = seconds
+        self._write_state("tracker", tracker)
+
     def issue(self, number):
         """The tracker's current view of an issue."""
         return self._read_state("tracker")["issues"][str(number)]
@@ -135,6 +143,12 @@ class Scenario:
         """Queues what the agent does on each attempt at a ticket (see tests/fakes/claude.py)."""
         agent = self._read_state("agent")
         agent["behaviours"][str(ticket)] = list(behaviours)
+        self._write_state("agent", agent)
+
+    def agent_pauses(self, seconds):
+        """Makes every headless run go silent for seconds in the middle of a tool call."""
+        agent = self._read_state("agent")
+        agent["pause"] = seconds
         self._write_state("agent", agent)
 
     def review_finds(self, round_, *findings):
@@ -269,6 +283,16 @@ class Scenario:
             timeout=120,
         )
         return Result(proc.returncode, proc.stdout)
+
+    def ralph_on_terminal(self, *args, columns=terminal.COLUMNS, interrupt_when=None, **env):
+        """Runs ralph on a pseudo-terminal (see tests/terminal.py), typing Ctrl-C once interrupt_when shows."""
+        return terminal.run(
+            [sys.executable, RALPH, *args],
+            cwd=self.work,
+            env=self.env(TERM="xterm-256color", **env),
+            columns=columns,
+            interrupt_when=interrupt_when,
+        )
 
 
 class ScenarioTestCase(unittest.TestCase):

@@ -2,7 +2,8 @@
 
 The harness installs this file as `gh` first on the path of the run under test.
 Its state lives in `$RALPH_FAKE/tracker.json` (see `tests/harness.py` for the
-shape) and every invocation is appended to `$RALPH_FAKE/calls.jsonl`.
+shape; "delay" makes every call take that many seconds) and every invocation
+is appended to `$RALPH_FAKE/calls.jsonl`.
 
 Only the calls ralph is known to make are understood. Anything else exits
 non-zero with "fake gh: unexpected call", so a new use of `gh` in ralph fails
@@ -19,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 FAKE = os.environ["RALPH_FAKE"]
 STATE = os.path.join(FAKE, "tracker.json")
@@ -234,7 +236,9 @@ def main(args):
         handler = HANDLERS.get(tuple(args[:2])) or HANDLERS.get(tuple(args[:1]))
         if handler is None:
             unexpected(args)
-        call.update(handler(load(), args) or {})
+        state = load()
+        time.sleep(state.get("delay", 0))
+        call.update(handler(state, args) or {})
     except SystemExit as exit:
         call["status"] = exit.code
         raise

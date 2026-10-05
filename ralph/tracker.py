@@ -2,11 +2,13 @@
 
 import json
 from collections.abc import Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from ralph import proc
 from ralph.errors import RalphError
+from ralph.progress import Progress
 
 
 @dataclass(frozen=True)
@@ -66,21 +68,32 @@ def _json_documents(text: str) -> list[Any]:
 
 
 class Tracker:
-    def __init__(self, directory: str):
+    def __init__(self, directory: str, progress: Optional[Progress] = None):
+        """progress, if given, shows every call to GitHub as a wait."""
         self.directory = directory
-        self.repo = self._json("repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
+        self.progress = progress
+        self.repo = self._json("finding the repository", "repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
 
-    def _gh(self, *args: str, input: Optional[str] = None) -> str:
-        return proc.output(("gh",) + args, cwd=self.directory, input=input)
+    def _gh(self, doing: str, *args: str, input: Optional[str] = None) -> str:
+        """Runs gh with args; doing says what for, as in "GitHub: closing #3"."""
+        with self.progress.waiting(f"GitHub: {doing}") if self.progress else nullcontext():
+            return proc.output(("gh",) + args, cwd=self.directory, input=input)
 
-    def _json(self, *args: str) -> dict[str, Any]:
-        return json.loads(self._gh(*args))
+    def _json(self, doing: str, *args: str) -> dict[str, Any]:
+        return json.loads(self._gh(doing, *args))
 
     def spec_title(self, spec: int) -> str:
-        return self._json("issue", "view", str(spec), "--repo", self.repo, "--json", "title")["title"]
+        return self._json(f"reading #{spec}", "issue", "view", str(spec), "--repo", self.repo, "--json", "title")[
+            "title"
+        ]
 
     def tickets(self, spec: int) -> list[Ticket]:
-        out = self._gh("api", "--paginate", f"repos/{self.repo}/issues/{spec}/sub_issues?per_page=100")
+        out = self._gh(
+            f"reading the tickets of #{spec}",
+            "api",
+            "--paginate",
+            f"repos/{self.repo}/issues/{spec}/sub_issues?per_page=100",
+        )
         try:
             pages = _json_documents(out)
         except ValueError as e:
@@ -99,7 +112,14 @@ class Tracker:
 
     def ticket_details(self, number: int) -> TicketDetails:
         issue = self._json(
-            "issue", "view", str(number), "--repo", self.repo, "--json", "number,title,url,body,comments"
+            f"reading #{number}",
+            "issue",
+            "view",
+            str(number),
+            "--repo",
+            self.repo,
+            "--json",
+            "number,title,url,body,comments",
         )
         return TicketDetails(
             number=issue["number"],
@@ -110,10 +130,10 @@ class Tracker:
         )
 
     def close(self, number: int, comment: str) -> None:
-        self._gh("issue", "close", str(number), "--repo", self.repo, "--comment", comment)
+        self._gh(f"closing #{number}", "issue", "close", str(number), "--repo", self.repo, "--comment", comment)
 
     def comment(self, number: int, body: str) -> None:
-        self._gh("issue", "comment", str(number), "--repo", self.repo, "--body", body)
+        self._gh(f"commenting on #{number}", "issue", "comment", str(number), "--repo", self.repo, "--body", body)
 
     def open_pull_request(self, base: str, head: str, title: str, body: str) -> str:
         """Opens a pull request of the pushed branch head into base and returns its URL."""
@@ -138,10 +158,20 @@ class Tracker:
         """Opens a new ticket as a sub-issue of spec and returns its number."""
         fields = json.dumps({"title": title, "body": body, "labels": list(labels)})
         created = json.loads(
-            self._gh("api", f"repos/{self.repo}/issues", "--method", "POST", "--input", "-", input=fields)
+            self._gh(
+                "opening a fix ticket",
+                "api",
+                f"repos/{self.repo}/issues",
+                "--method",
+                "POST",
+                "--input",
+                "-",
+                input=fields,
+            )
         )
         # Sub-issues are linked by the issue's id, not its number.
         self._gh(
+            f"adding #{created['number']} to #{spec}",
             "api",
             f"repos/{self.repo}/issues/{spec}/sub_issues",
             "--method",

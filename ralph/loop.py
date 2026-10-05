@@ -235,10 +235,14 @@ class Loop:
         record = self.record.ticket(n, ticket.title)
         record.attempts = attempt
         self.record.save(self.run_dir)
-        final = self.agent.run(prompt, log, self.console.prose)
-        self._check_checkout(f"iteration {self.iteration} (ticket #{n})")
-
-        reason = self._not_done(final, before) or self._verify(n)
+        label = (
+            f"iteration {self.iteration}/{self.config.max_iterations}, "
+            f"ticket #{n}, attempt {attempt}/{self.config.max_attempts}"
+        )
+        with self.console.progress.waiting(label) as wait:
+            final = self.agent.run(prompt, log, self.console.prose, wait.doing, self.console.passthrough)
+            self._check_checkout(f"iteration {self.iteration} (ticket #{n})")
+            reason = self._not_done(final, before) or self._verify(n)
         if reason is None:
             commits = list(reversed(self.checkout.commits(before)))
             self.tracker.close(n, f"Implemented by ralph on `{self.branch}`: {' '.join(c.short for c in commits)}")
@@ -269,7 +273,12 @@ class Loop:
         self.record.save(self.run_dir)
         prompt = prompts.review(self.context, self.fixed_point, round_, findings_file, resolves)
         log = os.path.join(self.run_dir, f"{self.iteration:02d}-review-{round_}.jsonl")
-        self.agent.run(prompt, log, self.console.prose)
+        label = (
+            f"iteration {self.iteration}/{self.config.max_iterations}, "
+            f"review round {round_}/{self.config.max_review_rounds}"
+        )
+        with self.console.progress.waiting(label) as wait:
+            self.agent.run(prompt, log, self.console.prose, wait.doing, self.console.passthrough)
         culprit = f"iteration {self.iteration} (review round {round_})"
         self._check_checkout(culprit)
         if self.checkout.head() != head:
@@ -313,7 +322,8 @@ class Loop:
         """Runs the verify command, if any. Why it failed, or None if it passed or there is none."""
         if self.config.verify is None:
             return None
-        failure = verify.run(self.config.verify, self.checkout.root)
+        with self.console.progress.waiting(f"verify: {self.config.verify}"):
+            failure = verify.run(self.config.verify, self.checkout.root)
         if failure is None:
             return None
         # The next attempt reads the ticket's comments, so it learns what went wrong.
