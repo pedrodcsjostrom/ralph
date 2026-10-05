@@ -1,9 +1,10 @@
 """What the runner reads on the terminal: ralph's own messages and the agents' prose."""
 
 import sys
+from contextlib import AbstractContextManager
 from typing import Optional, TextIO
 
-from ralph.progress import Progress
+from ralph.progress import Progress, Wait
 
 
 class Console:
@@ -17,6 +18,10 @@ class Console:
         with self.progress.above():
             stream.write(text)
             stream.flush()
+
+    def waiting(self, label: str) -> AbstractContextManager[Wait]:
+        """Shows the working indicator, labelled, while the block runs (see Progress.waiting)."""
+        return self.progress.waiting(label)
 
     def say(self, message: str) -> None:
         self._write(self.out, f"ralph: {message}\n")

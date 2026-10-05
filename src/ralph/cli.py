@@ -5,7 +5,7 @@ import os
 import sys
 from collections.abc import Mapping
 from types import ModuleType
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from ralph import (
     CLONE,
@@ -26,7 +26,7 @@ from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
 from ralph.console import Console
-from ralph.errors import RalphError, Reported
+from ralph.errors import AlreadyReported, RalphError
 from ralph.loop import Loop
 from ralph.record import RunRecord
 from ralph.tracker import Tracker
@@ -168,15 +168,30 @@ def require_tools(*tools: ModuleType) -> None:
         raise RalphError("cannot start:\n" + "\n".join("  - " + p for p in found))
 
 
+class _Session(NamedTuple):
+    """What every command that launches agents needs: the project, its configuration, its tracker and an agent."""
+
+    root: str
+    config: Config
+    tracker: Tracker
+    agent: Agent
+
+
+def _session(console: Console) -> _Session:
+    """Checks the machine, the configuration and that an agent resolves the bundled skills, before any change."""
+    require_tools(checkout, tracker, agent)
+    root = project.root(os.environ)
+    config = Config.load(root, os.environ)
+    claude = Agent(root, config.agent_flags)
+    with console.waiting("Claude Code: checking it resolves the bundled skills"):
+        claude.check()
+    return _Session(root, config, Tracker(root, console.progress), claude)
+
+
 def _loop(spec: int, console: Console) -> Loop:
     """The loop for spec in the project, once the machine and the configuration are known to be fit."""
-    require_tools(checkout, tracker, agent)
-    repo = Checkout(project.root(os.environ))
-    config = Config.load(repo.root, os.environ)
-    claude = Agent(repo.root, config.agent_flags)
-    with console.progress.waiting("Claude Code: checking it resolves the bundled skills"):
-        claude.check()
-    return Loop(spec, Tracker(repo.root, console.progress), claude, repo, console, config)
+    found = _session(console)
+    return Loop(spec, found.tracker, found.agent, Checkout(found.root), console, found.config)
 
 
 def _run(args: argparse.Namespace, console: Console) -> int:
@@ -190,17 +205,11 @@ def _watch(args: argparse.Namespace, console: Console) -> int:
 
 
 def _split(args: argparse.Namespace, console: Console) -> int:
-    require_tools(checkout, tracker, agent)
-    root = project.root(os.environ)
-    config = Config.load(root, os.environ)
-    tracker_ = Tracker(root, console.progress)
-    title = tracker_.spec_title(args.spec)
-    claude = Agent(root, config.agent_flags)
-    with console.progress.waiting("Claude Code: checking it resolves the bundled skills"):
-        claude.check()
+    found = _session(console)
+    title = found.tracker.spec_title(args.spec)
     console.say(f"splitting spec #{args.spec} into tickets in an interactive session")
-    status = claude.interactive(prompts.split(args.spec, title, tracker_.repo))
-    tickets = len(tracker_.tickets(args.spec))
+    status = found.agent.interactive(prompts.split(args.spec, title, found.tracker.repo))
+    tickets = len(found.tracker.tickets(args.spec))
     count = f"{tickets} ticket{'' if tickets == 1 else 's'}"
     if status != 0:
         raise RalphError(
@@ -237,7 +246,7 @@ def _publish(args: argparse.Namespace, console: Console) -> int:
         body = f.read()
     tracker_ = Tracker(repo.root, console.progress)
     title = tracker_.spec_title(record.spec)
-    with console.progress.waiting(f"pushing {record.branch}"):
+    with console.waiting(f"pushing {record.branch}"):
         repo.push(record.branch)
     console.say(f"pushed {record.branch}")
     url = tracker_.open_pull_request(config.main_branch, record.branch, title, body)
@@ -291,7 +300,7 @@ def main(argv: list[str], console: Optional[Console] = None) -> int:
         except ValueError as e:
             raise RalphError(str(e)) from None
         return args.handler(args, console)
-    except Reported as e:
+    except AlreadyReported as e:
         return e.status
     except RalphError as e:
         console.error(str(e))

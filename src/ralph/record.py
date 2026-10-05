@@ -13,6 +13,22 @@ from typing import Optional
 FILE = "run.json"
 
 
+class TicketOutcome:
+    """Where a ticket stands in a run."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+    # It spent its attempts without closing.
+    GIVEN_UP = "given up"
+
+
+class RunOutcome:
+    """How a run ended."""
+
+    COMPLETE = "complete"
+    STOPPED = "stopped"
+
+
 @dataclass
 class TicketRecord:
     number: int
@@ -20,8 +36,7 @@ class TicketRecord:
     # The review round whose finding the ticket was created from, None for a ticket of the original split.
     from_review_round: Optional[int] = None
     attempts: int = 0
-    # "open" until it is "closed" or, having spent its attempts, "given up".
-    outcome: str = "open"
+    outcome: str = TicketOutcome.OPEN
     # The commits that implemented it, full shas, oldest first.
     commits: list[str] = field(default_factory=list)
 
@@ -48,7 +63,7 @@ class RunRecord:
     base: str
     tickets: list[TicketRecord] = field(default_factory=list)
     review_rounds: list[ReviewRoundRecord] = field(default_factory=list)
-    # None while the run is going, then "complete" or "stopped".
+    # None while the run is going, then a RunOutcome.
     outcome: Optional[str] = None
     # Why the run stopped, when it did not complete.
     reason: Optional[str] = None
@@ -58,7 +73,7 @@ class RunRecord:
     @property
     def ended_cleanly(self) -> bool:
         """Whether the run completed: every ticket closed and the last review round clean."""
-        return self.outcome == "complete"
+        return self.outcome == RunOutcome.COMPLETE
 
     def ticket(self, number: int, title: str, from_review_round: Optional[int] = None) -> TicketRecord:
         """The record of a ticket, started on first use."""

@@ -30,9 +30,8 @@ from typing import Optional
 from ralph import checkout, config, pin
 from ralph.checkout import Checkout
 from ralph.errors import RalphError
-from ralph.loop import READY
 from ralph.project import RULES
-from ralph.tracker import Tracker
+from ralph.tracker import READY, Tracker
 
 WRAPPER = "ralph"
 # A line of the wrapper's own documentation, which tells a wrapper from any other file named ralph.

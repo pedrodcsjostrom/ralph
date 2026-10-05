@@ -9,7 +9,7 @@ import os
 from collections.abc import Iterable
 
 from ralph.checkout import Commit
-from ralph.record import RunRecord, TicketRecord
+from ralph.record import RunRecord, TicketOutcome, TicketRecord
 
 FILE = "pull-request.md"
 
@@ -31,7 +31,7 @@ class _Draft:
         self.record = record
         commits = list(reversed(list(commits)))
         self.subjects = {c.sha: (c.message.splitlines() or [""])[0] for c in commits}
-        accounted = {sha for t in record.tickets if t.outcome == "closed" for sha in t.commits}
+        accounted = {sha for t in record.tickets if t.outcome == TicketOutcome.CLOSED for sha in t.commits}
         # Commits on the branch since the base that no ticket of this run closed with: work from an
         # attempt that did not finish its ticket, or from before this run.
         self.unaccounted = [c.sha for c in commits if c.sha not in accounted]
@@ -48,7 +48,7 @@ class _Draft:
             "## Tickets\n\n" + ("\n".join(self.ticket(t) for t in r.tickets) or "None."),
             "## Review rounds\n\n" + ("\n".join(self.rounds()) or "None."),
         ]
-        given_up = [t for t in r.tickets if t.outcome == "given up"]
+        given_up = [t for t in r.tickets if t.outcome == TicketOutcome.GIVEN_UP]
         if given_up:
             sections.append("## Given up on\n\n" + "\n".join(f"- #{t.number} {t.title}" for t in given_up))
         if r.unreviewed:

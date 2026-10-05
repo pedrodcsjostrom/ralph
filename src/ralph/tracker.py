@@ -10,6 +10,9 @@ from ralph import proc
 from ralph.errors import RalphError
 from ralph.progress import Progress
 
+# The label that marks a ticket ready for an agent: part of the ticket contract, which the frontier relies on.
+READY = "ready-for-agent"
+
 
 @dataclass(frozen=True)
 class Ticket:

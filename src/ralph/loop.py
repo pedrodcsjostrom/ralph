@@ -9,6 +9,7 @@ needs is read from the tracker and the integration branch.
 import os
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Optional
 
 from ralph import draft, findings, project, prompts, runs, verify
@@ -16,11 +17,10 @@ from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
 from ralph.console import Console
-from ralph.errors import RalphError, Reported
-from ralph.record import ReviewRoundRecord, RunRecord
-from ralph.tracker import Ticket, Tracker
+from ralph.errors import AlreadyReported, RalphError
+from ralph.record import ReviewRoundRecord, RunOutcome, RunRecord, TicketOutcome
+from ralph.tracker import READY, Ticket, Tracker
 
-READY = "ready-for-agent"
 COMPLETE = "<promise>TICKET COMPLETE</promise>"
 
 
@@ -44,6 +44,15 @@ def _open_list(tickets: Iterable[Ticket]) -> str:
     return "\n".join(f"#{t.number} {t.title}" for t in sorted(tickets, key=lambda t: t.number) if t.is_open)
 
 
+@dataclass(frozen=True)
+class _Start:
+    """Where a run or a watched iteration starts, once the checkout is on the integration branch."""
+
+    branch: str
+    run_base: str
+    context: prompts.RunContext
+
+
 class Loop:
     def __init__(self, spec: int, tracker: Tracker, agent: Agent, checkout: Checkout, console: Console, config: Config):
         self.spec = spec
@@ -52,44 +61,10 @@ class Loop:
         self.agent = agent
         self.checkout = checkout
         self.console = console
-        self.iteration = 0
-        self.attempts: dict[int, int] = {}
-        # Tickets that spent their attempts without closing. They stay open on
-        # the tracker, so a rerun tries them again.
-        self.left_alone: set[int] = set()
 
     def run(self) -> None:
         """Implements and reviews until a review round is clean. Raises RalphError when the run cannot end cleanly."""
-        self._start()
-        self.run_dir = runs.create(self.checkout.root)
-        self.record = RunRecord(spec=self.spec, branch=self.branch, base=self.base)
-        self.record.save(self.run_dir)
-        self.console.say(f"spec #{self.spec} on {self.branch}, base {self.base[:9]}, logs in {self.run_dir}")
-        try:
-            self._rounds()
-        except RalphError as e:
-            self.console.error(str(e))
-            self._end("stopped", str(e))
-            raise Reported(1) from None
-        except KeyboardInterrupt:
-            self.console.error("interrupted")
-            self._end("stopped", "interrupted")
-            raise Reported(130) from None
-        self.console.say(
-            f"complete after {self.iteration} iterations. "
-            f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
-        )
-        self.console.say("nothing was pushed. Look it over, then open the pull request.")
-        self._end("complete")
-
-    def _end(self, outcome: str, reason: Optional[str] = None) -> None:
-        """Records how the run ended and leaves the pull request draft, then points the runner at it."""
-        self.record.outcome, self.record.reason = outcome, reason
-        if outcome != "complete":
-            self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
-        self.record.save(self.run_dir)
-        path = draft.write(self.run_dir, self.record, self.checkout.commits(self.base))
-        self.console.say(f"the pull request draft is {path}")
+        _Run(self, self._start()).run()
 
     def watch(self) -> None:
         """Opens an interactive session on the ticket an unattended run would implement next, and closes nothing.
@@ -97,17 +72,17 @@ class Loop:
         It starts exactly as a run does, so the session sees the same branch, ticket and prompt,
         except that the prompt tells the agent a human is present.
         """
-        self._start()
+        start = self._start()
         ready = frontier(self.tracker.tickets(self.spec))
         if not ready:
             raise RalphError(f"no ticket of spec #{self.spec} is on the frontier")
         n = ready[0].number
-        self.console.say(f"ticket #{n} of spec #{self.spec} on {self.branch}")
+        self.console.say(f"ticket #{n} of spec #{self.spec} on {start.branch}")
         prompt = prompts.implement(
-            self.context,
+            start.context,
             self.tracker.ticket_details(n),
             fixed_point=self.checkout.head(),
-            commits=self.checkout.commits(self.base, limit=prompts.RECENT_COMMITS),
+            commits=self.checkout.commits(start.run_base, limit=prompts.RECENT_COMMITS),
             watched=True,
         )
         status = self.agent.interactive(prompt)
@@ -116,6 +91,101 @@ class Loop:
         self.console.say(
             f"#{n} stays open. When the work is good, close it: gh issue close {n} --repo {self.tracker.repo}"
         )
+
+    def _start(self) -> _Start:
+        if not self.checkout.is_clean():
+            raise RalphError("the working tree is not clean; commit or discard your changes first")
+        branch = self.checkout.current_branch()
+        if branch is None:
+            raise RalphError("HEAD is detached; check out a branch first")
+
+        title = self.tracker.spec_title(self.spec)
+        if not self.tracker.tickets(self.spec):
+            raise RalphError(
+                f"spec #{self.spec} has no tickets. Split it into tickets first with `ralph split {self.spec}`, "
+                f"or by hand: sub-issues of #{self.spec} labelled {READY}, with their blockers recorded as issue "
+                "dependencies."
+            )
+
+        # The whole spec lands on one integration branch and main never gets a
+        # commit. Started from any other branch, that branch is the integration branch.
+        main = self.config.main_branch
+        run_base = self._run_base(main)
+        if branch == main:
+            branch = integration_branch(self.spec, title)
+            self.checkout.switch(branch)
+        context = prompts.RunContext(
+            spec=self.spec,
+            repo=self.tracker.repo,
+            branch=branch,
+            rules={kind: project.rules(self.checkout.root, kind) for kind in project.RULES},
+        )
+        return _Start(branch, run_base, context)
+
+    def _run_base(self, main: str) -> str:
+        """The configured run base, or else the merge base of HEAD with the main branch."""
+        if self.config.run_base is None:
+            return self.checkout.merge_base("HEAD", main)
+        base = self.checkout.resolve(self.config.run_base)
+        if base is None:
+            raise RalphError(f"the run base {self.config.run_base!r} (run_base) is not a commit in this repository")
+        return base
+
+
+class _Run:
+    """One run of the loop, from the moment it is on the integration branch until it stops.
+
+    It keeps its record and logs in a fresh run directory.
+    """
+
+    def __init__(self, loop: Loop, start: _Start):
+        self.spec = loop.spec
+        self.config = loop.config
+        self.tracker = loop.tracker
+        self.agent = loop.agent
+        self.checkout = loop.checkout
+        self.console = loop.console
+        self.branch = start.branch
+        self.base = start.run_base
+        self.context = start.context
+        # The commit the next review round compares the work against.
+        self.fixed_point = start.run_base
+        self.iteration = 0
+        self.attempts: dict[int, int] = {}
+        # Tickets that spent their attempts without closing. They stay open on
+        # the tracker, so a rerun tries them again.
+        self.left_alone: set[int] = set()
+        self.run_dir = runs.create(self.checkout.root)
+        self.record = RunRecord(spec=self.spec, branch=self.branch, base=self.base)
+        self.record.save(self.run_dir)
+
+    def run(self) -> None:
+        self.console.say(f"spec #{self.spec} on {self.branch}, base {self.base[:9]}, logs in {self.run_dir}")
+        try:
+            self._rounds()
+        except RalphError as e:
+            self.console.error(str(e))
+            self._end(RunOutcome.STOPPED, str(e))
+            raise AlreadyReported(1) from None
+        except KeyboardInterrupt:
+            self.console.error("interrupted")
+            self._end(RunOutcome.STOPPED, "interrupted")
+            raise AlreadyReported(130) from None
+        self.console.say(
+            f"complete after {self.iteration} iterations. "
+            f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
+        )
+        self.console.say("nothing was pushed. Look it over, then open the pull request.")
+        self._end(RunOutcome.COMPLETE)
+
+    def _end(self, outcome: str, reason: Optional[str] = None) -> None:
+        """Records how the run ended and leaves the pull request draft, then points the runner at it."""
+        self.record.outcome, self.record.reason = outcome, reason
+        if outcome != RunOutcome.COMPLETE:
+            self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
+        self.record.save(self.run_dir)
+        path = draft.write(self.run_dir, self.record, self.checkout.commits(self.base))
+        self.console.say(f"the pull request draft is {path}")
 
     def _rounds(self) -> None:
         """Implements the frontier, then reviews, until a review round finds nothing or nothing is left to review.
@@ -176,54 +246,20 @@ class Loop:
             for c in reversed(self.checkout.commits(self.fixed_point))
         )
 
-    def _start(self) -> None:
-        if not self.checkout.is_clean():
-            raise RalphError("the working tree is not clean; commit or discard your changes first")
-        branch = self.checkout.current_branch()
-        if branch is None:
-            raise RalphError("HEAD is detached; check out a branch first")
+    def _next_iteration(self, what: str, heading_detail: str = "") -> str:
+        """Counts a new iteration doing what, such as "ticket #3, attempt 1/2", and heads its output.
 
-        title = self.tracker.spec_title(self.spec)
-        if not self.tracker.tickets(self.spec):
-            raise RalphError(
-                f"spec #{self.spec} has no tickets. Split it into tickets first with `ralph split {self.spec}`, "
-                f"or by hand: sub-issues of #{self.spec} labelled {READY}, with their blockers recorded as issue "
-                "dependencies."
-            )
-
-        # The whole spec lands on one integration branch and main never gets a
-        # commit. Started from any other branch, that branch is the integration branch.
-        main = self.config.main_branch
-        self.base = self._run_base(main)
-        if branch == main:
-            branch = integration_branch(self.spec, title)
-            self.checkout.switch(branch)
-        self.branch = branch
-        # The commit the next review round compares the work against.
-        self.fixed_point = self.base
-        self.context = prompts.RunContext(
-            spec=self.spec,
-            repo=self.tracker.repo,
-            branch=branch,
-            rules={kind: project.rules(self.checkout.root, kind) for kind in project.RULES},
-        )
-
-    def _run_base(self, main: str) -> str:
-        """The configured run base, or else the merge base of HEAD with the main branch."""
-        if self.config.run_base is None:
-            return self.checkout.merge_base("HEAD", main)
-        base = self.checkout.resolve(self.config.run_base)
-        if base is None:
-            raise RalphError(f"the run base {self.config.run_base!r} (run_base) is not a commit in this repository")
-        return base
+        Returns the label of its working indicator.
+        """
+        self.iteration += 1
+        count = f"{self.iteration}/{self.config.max_iterations}"
+        self.console.heading(f"[{count}] {what}{heading_detail}")
+        return f"iteration {count}, {what}"
 
     def _implement(self, ticket: Ticket) -> None:
-        self.iteration += 1
         n = ticket.number
         attempt = self.attempts[n] = self.attempts.get(n, 0) + 1
-        self.console.heading(
-            f"[{self.iteration}/{self.config.max_iterations}] ticket #{n}, attempt {attempt}/{self.config.max_attempts}"
-        )
+        label = self._next_iteration(f"ticket #{n}, attempt {attempt}/{self.config.max_attempts}")
 
         before = self.checkout.head()
         prompt = prompts.implement(
@@ -236,18 +272,14 @@ class Loop:
         record = self.record.ticket(n, ticket.title)
         record.attempts = attempt
         self.record.save(self.run_dir)
-        label = (
-            f"iteration {self.iteration}/{self.config.max_iterations}, "
-            f"ticket #{n}, attempt {attempt}/{self.config.max_attempts}"
-        )
-        with self.console.progress.waiting(label) as wait:
+        with self.console.waiting(label) as wait:
             final = self.agent.run(prompt, log, self.console.prose, wait.doing, self.console.passthrough)
             self._check_checkout(f"iteration {self.iteration} (ticket #{n})")
             reason = self._not_done(final, before) or self._verify(n)
         if reason is None:
             commits = list(reversed(self.checkout.commits(before)))
             self.tracker.close(n, f"Implemented by ralph on `{self.branch}`: {' '.join(c.short for c in commits)}")
-            record.outcome = "closed"
+            record.outcome = TicketOutcome.CLOSED
             record.commits = [c.sha for c in commits]
             self.record.save(self.run_dir)
             self.console.say(f"closed #{n}")
@@ -255,16 +287,14 @@ class Loop:
         self.console.say(f"#{n} stays open, {reason}")
         if attempt >= self.config.max_attempts:
             self.left_alone.add(n)
-            record.outcome = "given up"
+            record.outcome = TicketOutcome.GIVEN_UP
             self.record.save(self.run_dir)
             self.console.say(f"giving up on #{n} after {attempt} attempts; it is left alone for the rest of this run")
 
     def _review(self, round_: int, resolves: list[int]) -> list[int]:
         """Runs one review round and publishes its findings as fix tickets. Returns their numbers."""
-        self.iteration += 1
-        self.console.heading(
-            f"[{self.iteration}/{self.config.max_iterations}] review round {round_}/{self.config.max_review_rounds}, "
-            f"since {self.fixed_point[:9]}"
+        label = self._next_iteration(
+            f"review round {round_}/{self.config.max_review_rounds}", f", since {self.fixed_point[:9]}"
         )
 
         head = self.checkout.head()
@@ -274,11 +304,7 @@ class Loop:
         self.record.save(self.run_dir)
         prompt = prompts.review(self.context, self.fixed_point, round_, findings_file, resolves)
         log = os.path.join(self.run_dir, f"{self.iteration:02d}-review-{round_}.jsonl")
-        label = (
-            f"iteration {self.iteration}/{self.config.max_iterations}, "
-            f"review round {round_}/{self.config.max_review_rounds}"
-        )
-        with self.console.progress.waiting(label) as wait:
+        with self.console.waiting(label) as wait:
             self.agent.run(prompt, log, self.console.prose, wait.doing, self.console.passthrough)
         culprit = f"iteration {self.iteration} (review round {round_})"
         self._check_checkout(culprit)
@@ -323,7 +349,7 @@ class Loop:
         """Runs the verify command, if any. Why it failed, or None if it passed or there is none."""
         if self.config.verify is None:
             return None
-        with self.console.progress.waiting(f"verify: {self.config.verify}"):
+        with self.console.waiting(f"verify: {self.config.verify}"):
             failure = verify.run(self.config.verify, self.checkout.root)
         if failure is None:
             return None

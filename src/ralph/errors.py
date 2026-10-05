@@ -2,7 +2,7 @@ class RalphError(Exception):
     """A reason to stop. The message is shown to the runner as is, after "ralph: "."""
 
 
-class Reported(RalphError):
+class AlreadyReported(RalphError):
     """A stop already shown to the runner, ending the command with status."""
 
     def __init__(self, status: int):
