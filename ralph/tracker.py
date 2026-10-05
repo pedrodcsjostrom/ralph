@@ -110,3 +110,6 @@ class Tracker:
 
     def close(self, number: int, comment: str) -> None:
         self._gh("issue", "close", str(number), "--repo", self.repo, "--comment", comment)
+
+    def comment(self, number: int, body: str) -> None:
+        self._gh("issue", "comment", str(number), "--repo", self.repo, "--body", body)
