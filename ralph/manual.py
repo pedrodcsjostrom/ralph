@@ -97,7 +97,18 @@ def text(commands: Mapping[str, argparse.ArgumentParser]) -> str:
     lines.append("")
 
     if maintainer:
-        lines += ["Maintainer commands", ""]
+        lines += [
+            "Maintainer commands",
+            "",
+            _paragraph(
+                "These run from a clone of ralph, not through a project's wrapper: as <clone>/bin/ralph, or as "
+                "`ralph` from any directory once it is linked onto your PATH, for instance with:",
+                "  ",
+            ),
+            "",
+            "      ln -s <clone>/bin/ralph ~/.local/bin/ralph",
+            "",
+        ]
         for name in maintainer:
             lines += _command(name, commands[name])
     return "\n".join(lines).rstrip() + "\n"

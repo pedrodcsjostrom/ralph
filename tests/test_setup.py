@@ -230,6 +230,49 @@ class Setup(ScenarioTestCase):
         return text[text.index("<!-- ralph:begin") : text.index("<!-- ralph:end -->") + len("<!-- ralph:end -->")]
 
 
+class GlobalRalph(ScenarioTestCase):
+    """The clone's bin/ralph linked onto PATH, as the README tells a maintainer to, and run by name."""
+
+    scenario = Setup.scenario
+
+    def on_path(self, s):
+        os.symlink(s.entry_point, os.path.join(s.bin, "ralph"))
+        os.symlink(sys.executable, os.path.join(s.bin, "python3"))
+
+    def run_by_name(self, s, *args, cwd):
+        proc = subprocess.run(
+            ("ralph",) + args, cwd=cwd, env=s.env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        return Result(proc.returncode, proc.stdout)
+
+    def test_ralph_on_path_shows_help_documenting_setup_from_any_directory(self):
+        s = self.scenario()
+        self.on_path(s)
+        elsewhere = os.path.join(s.root, "elsewhere")
+        os.makedirs(elsewhere)
+
+        result = self.run_by_name(s, "help", cwd=elsewhere)
+
+        self.assertEqual(result.status, 0, result.output)
+        maintainer = result.output.split("\nMaintainer commands\n")[1]
+        self.assertIn("\n  ralph setup [<directory>]\n", maintainer)
+        self.assertIn("Sets the git repository holding <directory>", " ".join(maintainer.split()))
+        self.assertIn("ln -s <clone>/bin/ralph ~/.local/bin/ralph", " ".join(maintainer.split()))
+
+    def test_ralph_on_path_sets_up_the_project_it_is_run_in(self):
+        s = self.scenario()
+        s.release()
+        self.on_path(s)
+        subdir = os.path.join(s.work, "src")
+        os.makedirs(subdir)
+
+        result = self.run_by_name(s, "setup", cwd=subdir)
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(s.read(".ralph/pin"), VERSION + "\n")
+        self.assertFalse(os.path.exists(os.path.join(subdir, ".ralph")))
+
+
 class SetupAgain(ScenarioTestCase):
     scenario = Setup.scenario
 

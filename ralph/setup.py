@@ -153,9 +153,7 @@ def setup(root: str, clone: str, tracker: Tracker) -> Outcome:
     existing_pin = files.text(pin.PIN)
     files.outcome.version = existing_pin.strip() if existing_pin else release(clone)
     instructions = _instructions_file(files)
-    agent_instructions = with_section(
-        files.text(instructions) or "", _template("agent-instructions.md"), instructions
-    )
+    agent_instructions = with_section(files.text(instructions) or "", _template("agent-instructions.md"), instructions)
 
     if tracker.ensure_label(READY, LABEL_DESCRIPTION, LABEL_COLOR):
         files.outcome.changes.append(f"created the {READY} label on {tracker.repo}")
