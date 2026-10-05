@@ -61,7 +61,7 @@ class ReviewRounds(ScenarioTestCase):
         )
         self.assertIn(f"- Fixed point, the commit to review the work against: {after_round_1}\n", reviews[2])
         self.assertIn("- This diff holds only the fixes for the previous review round's fix tickets: #5", reviews[2])
-        self.assertIn(f"review round 2/3, since {after_tickets[:9]}", result.output)
+        self.assertIn(f"review round 2/3, since fixed point {after_tickets[:9]}", result.output)
 
     def test_the_review_prompt_is_the_skill_invocation_the_generic_review_instructions_then_the_run_context(self):
         s = self.scenario()
@@ -125,7 +125,7 @@ class ReviewRounds(ScenarioTestCase):
 
         self.assertEqual(result.status, 0, result.output)
         self.assertEqual(s.events(), [])
-        self.assertIn("nothing to review since", result.output)
+        self.assertIn("nothing to review since the fixed point", result.output)
 
     def test_each_reviews_findings_are_kept_in_the_run_directory(self):
         s = self.scenario()
@@ -224,7 +224,8 @@ class Budgets(ScenarioTestCase):
         since = s.git("rev-parse", "--short=9", "HEAD~1")
         unreviewed = s.git("rev-parse", "--short=9", "HEAD")
         self.assertIn(
-            f"ralph: the review round budget (2) is spent; these commits since {since} are unreviewed:\n"
+            "ralph: the review round budget (2) is spent; "
+            f"these commits since the fixed point {since} are unreviewed:\n"
             f"{unreviewed} Implement ticket (#4)\n",
             result.output,
         )
@@ -251,7 +252,7 @@ class Budgets(ScenarioTestCase):
         head = s.git("rev-parse", "--short=9", "HEAD")
         self.assertIn(
             "ralph: the iteration budget (1) is spent before review round 1; rerun to carry on. "
-            f"These commits since {base} are unreviewed:\n{head} Implement ticket (#2)\n",
+            f"These commits since the fixed point {base} are unreviewed:\n{head} Implement ticket (#2)\n",
             result.output,
         )
 
@@ -289,7 +290,7 @@ class TheRunRecord(ScenarioTestCase):
             {
                 "spec": 1,
                 "branch": "spec/1-spec-widget-sorting",
-                "base": base,
+                "run_base": base,
                 "tickets": [
                     {
                         "number": 2,

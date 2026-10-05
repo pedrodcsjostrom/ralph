@@ -45,12 +45,18 @@ _Avoid_: Review pass, review cycle
 The commit a review compares the current work against.
 _Avoid_: Base, baseline
 
+**Run base**:
+The commit a run starts from: the merge base of the integration branch with the main branch, unless configured.
+It is the first review round's fixed point.
+_Avoid_: Base, baseline, starting commit
+
 **Integration branch**:
 The single branch on which every commit of a spec lands.
 _Avoid_: Feature branch, spec branch
 
 **Pull request draft**:
-The description of a run's outcome, assembled from what the loop recorded, that a human uses to open the pull request.
+The description of a spec's work on its integration branch, assembled from what the loop recorded in every run of the spec on that branch, that a human uses to open the pull request.
+It ends with how the latest run ended.
 _Avoid_: Summary, report
 
 ### The project

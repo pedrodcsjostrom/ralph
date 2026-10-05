@@ -62,7 +62,8 @@ class ReviewRoundRecord:
 class RunRecord:
     spec: int
     branch: str
-    base: str
+    # The commit the run started from; its first review round's fixed point.
+    run_base: str
     tickets: list[TicketRecord] = field(default_factory=list)
     review_rounds: list[ReviewRoundRecord] = field(default_factory=list)
     # None while the run is going, then a RunOutcome.

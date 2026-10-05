@@ -71,7 +71,7 @@ class _Draft:
     def render(self) -> str:
         r = self.record
         sections = [
-            f"Implements spec #{r.spec} on `{r.branch}`, from base {_short(r.base)}.",
+            f"Implements spec #{r.spec} on `{r.branch}`, from run base {_short(r.run_base)}.",
             "## How the run ended\n\n" + self.ending(),
             "## Tickets\n\n" + ("\n".join(self.ticket(t) for t in self.tickets) or "None."),
             "## Review rounds\n\n" + ("\n".join(self.rounds()) or "None."),
@@ -113,7 +113,7 @@ class _Draft:
                 found = f"fix tickets {_numbers(r.fix_tickets)}"
             else:
                 found = "found nothing"
-            lines.append(f"- Round {r.round}, since {_short(r.fixed_point)}{resolves}: {found}")
+            lines.append(f"- Round {r.round}, since fixed point {_short(r.fixed_point)}{resolves}: {found}")
         return lines
 
     def commits(self, shas: Iterable[str]) -> str:

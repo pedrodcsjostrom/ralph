@@ -116,12 +116,12 @@ class Loop:
         # The whole spec lands on one integration branch and main never gets a
         # commit. Started from any other branch, that branch is the integration branch.
         main = self.config.main_branch
-        configured_base = self._configured_run_base()
+        configured = self._configured_run_base()
         if branch == main:
             branch = integration_branch(self.spec, title)
             self.checkout.switch(branch)
         # Taken on the integration branch: a rerun from main after main moved on keeps the branch's own run base.
-        run_base = configured_base or self.checkout.merge_base("HEAD", main)
+        run_base = configured or self.checkout.merge_base("HEAD", main)
         context = prompts.RunContext(
             spec=self.spec,
             repo=self.tracker.repo,
@@ -134,10 +134,10 @@ class Loop:
         """The configured run base, resolved to a full sha, or None when the run base is the merge base."""
         if self.config.run_base is None:
             return None
-        base = self.checkout.resolve(self.config.run_base)
-        if base is None:
+        run_base = self.checkout.resolve(self.config.run_base)
+        if run_base is None:
             raise RalphError(f"the run base {self.config.run_base!r} (run_base) is not a commit in this repository")
-        return base
+        return run_base
 
 
 class _Run:
@@ -154,7 +154,7 @@ class _Run:
         self.checkout = loop.checkout
         self.console = loop.console
         self.branch = start.branch
-        self.base = start.run_base
+        self.run_base = start.run_base
         self.context = start.context
         # The commit the next review round compares the work against.
         self.fixed_point = start.run_base
@@ -164,11 +164,11 @@ class _Run:
         # the tracker, so a rerun tries them again.
         self.left_alone: set[int] = set()
         self.run_dir = runs.create(self.checkout.root)
-        self.record = RunRecord(spec=self.spec, branch=self.branch, base=self.base)
+        self.record = RunRecord(spec=self.spec, branch=self.branch, run_base=self.run_base)
         self.record.save(self.run_dir)
 
     def run(self) -> None:
-        self.console.say(f"spec #{self.spec} on {self.branch}, base {self.base[:9]}, logs in {self.run_dir}")
+        self.console.say(f"spec #{self.spec} on {self.branch}, run base {self.run_base[:9]}, logs in {self.run_dir}")
         try:
             self._rounds()
         except RalphError as e:
@@ -190,7 +190,7 @@ class _Run:
             raise AlreadyReported(1) from e
         self.console.say(
             f"complete after {self.iteration} iterations. "
-            f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
+            f"Spec #{self.spec} is implemented and reviewed on {self.branch} (run base {self.run_base[:9]})."
         )
         self.console.say("nothing was pushed. Look it over, then open the pull request.")
         self._end(RunOutcome.COMPLETE)
@@ -201,7 +201,7 @@ class _Run:
         if outcome != RunOutcome.COMPLETE:
             self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
         self.record.save(self.run_dir)
-        path = draft.write(self.run_dir, self._history(), self.checkout.commits(self.base))
+        path = draft.write(self.run_dir, self._history(), self.checkout.commits(self.run_base))
         self.console.say(f"the pull request draft is {path}")
 
     def _history(self) -> list[RunRecord]:
@@ -234,18 +234,18 @@ class _Run:
             self._implement_frontier()
             head = self.checkout.head()
             if head == self.fixed_point:
-                self.console.say(f"nothing to review since {self.fixed_point[:9]}")
+                self.console.say(f"nothing to review since the fixed point {self.fixed_point[:9]}")
                 return
             if round_ >= self.config.max_review_rounds:
                 raise RalphError(
                     f"the review round budget ({self.config.max_review_rounds}) is spent; "
-                    f"these commits since {self.fixed_point[:9]} are unreviewed:\n{self._unreviewed()}"
+                    f"these commits since the fixed point {self.fixed_point[:9]} are unreviewed:\n{self._unreviewed()}"
                 )
             if self.iteration >= self.config.max_iterations:
                 raise RalphError(
                     f"the iteration budget ({self.config.max_iterations}) is spent before review round "
-                    f"{round_ + 1}; rerun to carry on. These commits since {self.fixed_point[:9]} are unreviewed:\n"
-                    f"{self._unreviewed()}"
+                    f"{round_ + 1}; rerun to carry on. "
+                    f"These commits since the fixed point {self.fixed_point[:9]} are unreviewed:\n{self._unreviewed()}"
                 )
             round_ += 1
             fix_tickets = self._review(round_, fix_tickets)
@@ -300,7 +300,7 @@ class _Run:
             self.context,
             self.tracker.ticket_details(n),
             fixed_point=before,
-            commits=self.checkout.commits(self.base, limit=prompts.RECENT_COMMITS),
+            commits=self.checkout.commits(self.run_base, limit=prompts.RECENT_COMMITS),
         )
         log = os.path.join(self.run_dir, f"{self.iteration:02d}-ticket-{n}.jsonl")
         record = self.record.ticket(n, ticket.title)
@@ -328,7 +328,7 @@ class _Run:
     def _review(self, round_: int, resolves: list[int]) -> list[int]:
         """Runs one review round and publishes its findings as fix tickets. Returns their numbers."""
         label = self._next_iteration(
-            f"review round {round_}/{self.config.max_review_rounds}", f", since {self.fixed_point[:9]}"
+            f"review round {round_}/{self.config.max_review_rounds}", f", since fixed point {self.fixed_point[:9]}"
         )
 
         head = self.checkout.head()

@@ -69,7 +69,8 @@ KEYS = (
     Key(
         "run_base",
         "",
-        "The commit the first review compares the work against. None means the merge base with main_branch.",
+        "The run base: the commit a run starts from, which the first review round compares the work against. "
+        "None means the merge base of the integration branch with main_branch.",
         _text,
     ),
     Key("max_attempts", "2", "Attempts per ticket before it is left alone for the rest of the run.", _count),
@@ -96,7 +97,7 @@ class Config:
     verify: Optional[str] = None
     # The branch a run never commits to and takes its run base from.
     main_branch: str = "main"
-    # The commit the run's first review compares against; None means the merge base with main_branch.
+    # The run base, the first review round's fixed point; None means the merge base with main_branch.
     run_base: Optional[str] = None
     # Attempts per ticket before it is left alone for the rest of the run.
     max_attempts: int = 2

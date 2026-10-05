@@ -115,7 +115,7 @@ class IntegrationBranch(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertIn(f"base {base[:9]}", result.output)
+        self.assertIn(f"run base {base[:9]}", result.output)
         prompt = s.prompts()[0]
         self.assertIn("My own start", prompt)
         self.assertNotIn("Main moves on", prompt)

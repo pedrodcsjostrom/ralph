@@ -41,7 +41,7 @@ class ACleanRun(ScenarioTestCase):
         base = s.git("rev-parse", "--short=9", "main")
         self.assertEqual(
             read_draft(s),
-            f"Implements spec #1 on `spec/1-spec-widget-sorting`, from base `{base}`.\n"
+            f"Implements spec #1 on `spec/1-spec-widget-sorting`, from run base `{base}`.\n"
             "\n"
             "## How the run ended\n"
             "\n"
@@ -58,8 +58,8 @@ class ACleanRun(ScenarioTestCase):
             "\n"
             "## Review rounds\n"
             "\n"
-            f"- Round 1, since `{base}`: fix tickets #4\n"
-            f"- Round 2, since `{three}`, the fixes for #4: found nothing\n",
+            f"- Round 1, since fixed point `{base}`: fix tickets #4\n"
+            f"- Round 2, since fixed point `{three}`, the fixes for #4: found nothing\n",
         )
         self.assertEqual([s.issue(n)["state"] for n in (2, 3, 4)], ["closed"] * 3)
         self.assertEqual(s.issue(4)["title"], "Sort is unstable")
@@ -132,7 +132,7 @@ class AStoppedRun(ScenarioTestCase):
         base = s.git("rev-parse", "--short=9", "main")
         self.assertEqual(
             read_draft(s),
-            f"Implements spec #1 on `spec/1-spec-widget-sorting`, from base `{base}`.\n"
+            f"Implements spec #1 on `spec/1-spec-widget-sorting`, from run base `{base}`.\n"
             "\n"
             "## How the run ended\n"
             "\n"
@@ -221,7 +221,7 @@ class AStoppedRun(ScenarioTestCase):
 
         self.assertEqual(result.status, 1, result.output)
         base = s.git("rev-parse", "--short=9", "main")
-        self.assertIn(f"## Review rounds\n\n- Round 1, since `{base}`: did not finish\n", read_draft(s))
+        self.assertIn(f"## Review rounds\n\n- Round 1, since fixed point `{base}`: did not finish\n", read_draft(s))
 
     def test_a_ticket_never_attempted_is_named_as_such(self):
         s = self.scenario()
@@ -252,7 +252,7 @@ class ARerun(ScenarioTestCase):
         latest = read_draft(s, -1)
         self.assertEqual(
             latest,
-            f"Implements spec #1 on `spec/1-spec-widget-sorting`, from base `{base}`.\n"
+            f"Implements spec #1 on `spec/1-spec-widget-sorting`, from run base `{base}`.\n"
             "\n"
             "## How the run ended\n"
             "\n"
@@ -267,8 +267,8 @@ class ARerun(ScenarioTestCase):
             "\n"
             "## Review rounds\n"
             "\n"
-            f"- Round 1, since `{base}`: fix tickets #3\n"
-            f"- Round 2, since `{base}`: found nothing\n",
+            f"- Round 1, since fixed point `{base}`: fix tickets #3\n"
+            f"- Round 2, since fixed point `{base}`: found nothing\n",
         )
         s.add_remote()
         published = s.ralph("publish")

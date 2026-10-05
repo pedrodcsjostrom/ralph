@@ -117,7 +117,7 @@ class Configuration(ScenarioTestCase):
 
         self.assertEqual(result.status, 0, result.output)
         self.assertEqual(s.branch(), "spec/1-spec-widget-sorting")
-        self.assertIn(f"base {base[:9]}", result.output)
+        self.assertIn(f"run base {base[:9]}", result.output)
         self.assertEqual(s.log("trunk..HEAD"), ["Implement ticket (#2)"])
 
     def test_the_run_base_comes_from_the_configuration_file(self):
@@ -129,7 +129,7 @@ class Configuration(ScenarioTestCase):
         result = s.ralph("run", "1")
 
         self.assertEqual(result.status, 0, result.output)
-        self.assertIn(f"base {first[:9]}", result.output)
+        self.assertIn(f"run base {first[:9]}", result.output)
         [review] = [p for p in s.prompts() if "- Findings file:" in p]
         self.assertIn(f"- Fixed point, the commit to review the work against: {first}", review)
 

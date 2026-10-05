@@ -86,8 +86,8 @@ def _parser() -> argparse.ArgumentParser:
         "publish",
         help="push the integration branch and open the pull request",
         description="Pushes the latest run's integration branch to origin and opens a pull request from it against "
-        "the main branch, titled after the spec, with the run's pull request draft as its body. The only command "
-        "that takes work off this machine. "
+        "the main branch, titled after the spec, with the run's pull request draft as its body; the draft covers "
+        "every run of the spec on that branch. The only command that takes work off this machine. "
         "Refuses when the latest run did not end cleanly; --force publishes it anyway.",
     )
     publish.add_argument(
