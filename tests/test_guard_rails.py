@@ -174,5 +174,45 @@ class CheckoutInvariants(ScenarioTestCase):
         self.assertIn("left uncommitted changes", result.output)
 
 
+class IterationBudget(ScenarioTestCase):
+    def test_exceeding_the_iteration_budget_stops_the_run_and_says_what_is_left(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.ticket(3)
+        s.ticket(4, blocked_by=[3])
+
+        result = s.ralph("run", "1", RALPH_MAX_ITERATIONS="1")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertEqual(s.events(), ["agent #2", "close #2"])
+        self.assertIn(
+            "ralph: the iteration budget (1) is spent with work left; rerun to carry on. Still open:\n"
+            "#3 Ticket 3\n#4 Ticket 4",
+            result.output,
+        )
+
+    def test_a_run_that_finishes_on_its_last_iteration_succeeds(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.ticket(3)
+
+        result = s.ralph("run", "1", RALPH_MAX_ITERATIONS="2")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(s.events(), ["agent #2", "close #2", "agent #3", "close #3"])
+
+    def test_every_attempt_spends_an_iteration(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_does(2, "blocked", "blocked", "complete")
+
+        result = s.ralph("run", "1", RALPH_MAX_ITERATIONS="2", RALPH_MAX_ATTEMPTS="3")
+
+        self.assertEqual(result.status, 1, result.output)
+        self.assertEqual(s.events(), ["agent #2", "agent #2"])
+        self.assertIn("=== [2/2] ticket #2, attempt 2/3 ===", result.output)
+        self.assertIn("the iteration budget (2) is spent", result.output)
+
+
 if __name__ == "__main__":
     unittest.main()

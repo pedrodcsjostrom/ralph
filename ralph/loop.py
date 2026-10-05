@@ -39,6 +39,11 @@ def integration_branch(spec: int, title: str) -> str:
     return f"spec/{spec}-{slug}" if slug else f"spec/{spec}"
 
 
+def _open_list(tickets: Iterable[Ticket]) -> str:
+    """One "#N title" line per open ticket, lowest number first."""
+    return "\n".join(f"#{t.number} {t.title}" for t in sorted(tickets, key=lambda t: t.number) if t.is_open)
+
+
 class Loop:
     def __init__(self, spec: int, tracker: Tracker, agent: Agent, checkout: Checkout, console: Console, config: Config):
         self.spec = spec
@@ -59,16 +64,21 @@ class Loop:
         self.console.say(f"spec #{self.spec} on {self.branch}, base {self.base[:9]}, logs in {self.run_dir}")
 
         while True:
-            ready = frontier(self.tracker.tickets(self.spec), self.left_alone)
+            tickets = self.tracker.tickets(self.spec)
+            ready = frontier(tickets, self.left_alone)
             if not ready:
                 break
+            if self.iteration >= self.config.max_iterations:
+                raise RalphError(
+                    f"the iteration budget ({self.config.max_iterations}) is spent with work left; "
+                    f"rerun to carry on. Still open:\n{_open_list(tickets)}"
+                )
             self._implement(ready[0])
 
-        still_open = [t for t in self.tracker.tickets(self.spec) if t.is_open]
+        still_open = _open_list(self.tracker.tickets(self.spec))
         if still_open:
             raise RalphError(
-                "stopping, these tickets are open and nothing on the frontier can be implemented:\n"
-                + "\n".join(f"#{t.number} {t.title}" for t in sorted(still_open, key=lambda t: t.number))
+                f"stopping, these tickets are open and nothing on the frontier can be implemented:\n{still_open}"
             )
 
         self.console.say(
