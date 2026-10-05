@@ -5,7 +5,7 @@ import os
 import sys
 from typing import Optional
 
-from ralph import agent, checkout, tracker
+from ralph import agent, checkout, pin, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.console import Console
@@ -29,6 +29,15 @@ def _parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="implement a spec's tickets unattended")
     run.add_argument("spec", type=_issue_number, help="the spec's issue number")
     run.set_defaults(handler=_run)
+
+    upgrade = commands.add_parser(
+        "upgrade",
+        help="move the project's pin to a newer ralph version",
+        description="Moves the project's pin (.ralph/pin) to the newest released ralph version, or to the named one, "
+        "and reports the versions it moved from and to. Commit the changed pin to upgrade every runner.",
+    )
+    upgrade.add_argument("version", nargs="?", help="the release tag to pin (default: the newest)")
+    upgrade.set_defaults(handler=_upgrade)
     return parser
 
 
@@ -43,6 +52,17 @@ def _run(args: argparse.Namespace, console: Console) -> int:
     require_tools()
     repo = Checkout.at(os.getcwd())
     Loop(args.spec, Tracker(repo.root), Agent(repo.root), repo, console).run()
+    return 0
+
+
+def _upgrade(args: argparse.Namespace, console: Console) -> int:
+    old, new = pin.upgrade(Checkout.at(os.getcwd()).root, args.version)
+    if new != old:
+        console.say(f"moved the pin from {old} to {new}")
+    elif args.version is None:
+        console.say(f"already on the newest version, {new}; nothing changed")
+    else:
+        console.say(f"already on {new}; nothing changed")
     return 0
 
 

@@ -2,7 +2,7 @@
 
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Optional
 
 from ralph.errors import RalphError
@@ -22,18 +22,19 @@ def succeeds(args: Sequence[str], cwd: Optional[str] = None) -> bool:
     return proc.returncode == 0
 
 
-def output(args: Sequence[str], cwd: Optional[str] = None) -> str:
-    """The command's standard output. A failure stops the run with its error output."""
+def completed(
+    args: Sequence[str], cwd: Optional[str] = None, env: Optional[Mapping[str, str]] = None
+) -> subprocess.CompletedProcess:
+    """The finished command with its captured output, whatever its exit status."""
     try:
-        proc = subprocess.run(
-            args,
-            cwd=cwd,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-        )
+        return subprocess.run(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     except OSError as e:
         raise RalphError(f"could not run {args[0]}: {e}") from e
+
+
+def output(args: Sequence[str], cwd: Optional[str] = None) -> str:
+    """The command's standard output. A failure stops the run with its error output."""
+    proc = completed(args, cwd=cwd)
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or f"exit status {proc.returncode}"
         raise RalphError(f"`{' '.join(args[:3])}` failed: {detail}")

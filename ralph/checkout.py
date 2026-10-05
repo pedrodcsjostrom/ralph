@@ -1,10 +1,14 @@
 """Checkout: the only module that talks to git."""
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
 from ralph import proc
 from ralph.errors import RalphError
+
+# Variables that would point git at an enclosing repository instead of the one asked about.
+_REPOSITORY_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR")
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,19 @@ def problems() -> list[str]:
     if not proc.on_path("git"):
         return ["git is not on PATH; install git"]
     return []
+
+
+def remote_tags(repository: str) -> list[str]:
+    """The tag names in repository, listed anonymously: no credentials and no prompts."""
+    env = {name: value for name, value in os.environ.items() if name not in _REPOSITORY_ENV}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    listing = proc.completed(["git", "-c", "credential.helper=", "ls-remote", "--tags", "--refs", repository], env=env)
+    if listing.returncode != 0:
+        detail = "\n".join(("  " + line).rstrip() for line in listing.stderr.strip().splitlines())
+        raise RalphError(f"could not list the versions in {repository}:\n{detail}")
+    prefix = "refs/tags/"
+    refs = (line.split("\t", 1)[-1] for line in listing.stdout.splitlines())
+    return [ref[len(prefix) :] for ref in refs if ref.startswith(prefix)]
 
 
 class Checkout:
