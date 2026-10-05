@@ -5,7 +5,7 @@ import os
 import sys
 from typing import Optional
 
-from ralph import agent, checkout, pin, skill_sync, tracker
+from ralph import agent, checkout, pin, project, skill_sync, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
@@ -67,10 +67,10 @@ def require_tools() -> None:
 
 
 def _run(args: argparse.Namespace, console: Console) -> int:
-    config = Config.from_env(os.environ)
     require_tools()
-    repo = Checkout.at(os.getcwd())
-    Loop(args.spec, Tracker(repo.root), Agent(repo.root), repo, console, config).run()
+    repo = Checkout(project.root(os.environ))
+    config = Config.load(repo.root, os.environ)
+    Loop(args.spec, Tracker(repo.root), Agent(repo.root, config.agent_flags), repo, console, config).run()
     return 0
 
 
@@ -87,7 +87,7 @@ def _sync_skills(args: argparse.Namespace, console: Console) -> int:
 
 
 def _upgrade(args: argparse.Namespace, console: Console) -> int:
-    old, new = pin.upgrade(Checkout.at(os.getcwd()).root, args.version)
+    old, new = pin.upgrade(project.root(os.environ), args.version)
     if new != old:
         console.say(f"moved the pin from {old} to {new}")
     elif args.version is None:

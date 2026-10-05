@@ -3,6 +3,7 @@
 import json
 import subprocess
 import threading
+from collections.abc import Sequence
 from typing import Callable
 
 from ralph import proc
@@ -35,8 +36,10 @@ def _texts(event: dict) -> list[str]:
 
 
 class Agent:
-    def __init__(self, directory: str):
+    def __init__(self, directory: str, flags: Sequence[str] = ()):
         self.directory = directory
+        # The project's extra flags, after ralph's own so they can refine them.
+        self.flags = list(flags)
 
     def run(self, prompt: str, log_path: str, on_prose: Callable[[str], None]) -> str:
         """Runs one headless iteration in a fresh context window and returns the agent's final message.
@@ -46,7 +49,7 @@ class Agent:
         """
         try:
             agent = subprocess.Popen(
-                ["claude"] + HEADLESS + PERMISSIONS,
+                ["claude"] + HEADLESS + PERMISSIONS + self.flags,
                 cwd=self.directory,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,

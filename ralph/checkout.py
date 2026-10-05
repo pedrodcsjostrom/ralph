@@ -73,6 +73,11 @@ class Checkout:
     def head(self) -> str:
         return self._git("rev-parse", "HEAD").strip()
 
+    def resolve(self, revision: str) -> Optional[str]:
+        """The full sha of the commit revision names, or None when it names none."""
+        found = proc.completed(["git", "rev-parse", "--verify", "--quiet", revision + "^{commit}"], cwd=self.root)
+        return found.stdout.strip() if found.returncode == 0 else None
+
     def merge_base(self, a: str, b: str) -> str:
         if not proc.succeeds(["git", "rev-parse", "--verify", "--quiet", b], cwd=self.root):
             raise RalphError(f"there is no branch {b} to take the run base from")

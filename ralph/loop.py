@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterable
 from typing import Optional
 
-from ralph import findings, prompts, runs, verify
+from ralph import findings, project, prompts, runs, verify
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
@@ -22,7 +22,6 @@ from ralph.tracker import Ticket, Tracker
 
 READY = "ready-for-agent"
 COMPLETE = "<promise>TICKET COMPLETE</promise>"
-MAIN = "main"
 
 
 def frontier(tickets: Iterable[Ticket], leave_alone: Iterable[int] = ()) -> list[Ticket]:
@@ -153,17 +152,32 @@ class Loop:
 
         # The whole spec lands on one integration branch and main never gets a
         # commit. Started from any other branch, that branch is the integration branch.
-        if branch == MAIN:
+        main = self.config.main_branch
+        self.base = self._run_base(main)
+        if branch == main:
             branch = integration_branch(self.spec, title)
             self.checkout.switch(branch)
         self.branch = branch
-        self.base = self.checkout.merge_base("HEAD", MAIN)
         # The commit the next review round compares the work against.
         self.fixed_point = self.base
-        self.context = prompts.RunContext(spec=self.spec, repo=self.tracker.repo, branch=branch)
+        self.context = prompts.RunContext(
+            spec=self.spec,
+            repo=self.tracker.repo,
+            branch=branch,
+            rules={kind: project.rules(self.checkout.root, kind) for kind in project.RULES},
+        )
         self.run_dir = runs.create(self.checkout.root)
         self.record = RunRecord(spec=self.spec, branch=branch, base=self.base)
         self.record.save(self.run_dir)
+
+    def _run_base(self, main: str) -> str:
+        """The configured run base, or else the merge base of HEAD with the main branch."""
+        if self.config.run_base is None:
+            return self.checkout.merge_base("HEAD", main)
+        base = self.checkout.resolve(self.config.run_base)
+        if base is None:
+            raise RalphError(f"the run base {self.config.run_base!r} (run_base) is not a commit in this repository")
+        return base
 
     def _implement(self, ticket: Ticket) -> None:
         self.iteration += 1
