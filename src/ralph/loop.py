@@ -201,8 +201,25 @@ class _Run:
         if outcome != RunOutcome.COMPLETE:
             self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
         self.record.save(self.run_dir)
-        path = draft.write(self.run_dir, self.record, self.checkout.commits(self.base))
+        path = draft.write(self.run_dir, self._history(), self.checkout.commits(self.base))
         self.console.say(f"the pull request draft is {path}")
+
+    def _history(self) -> list[RunRecord]:
+        """The records of the earlier runs of this spec on this integration branch, oldest first, then this run's.
+
+        A run directory without a readable record is skipped: the draft is never held up by an old run.
+        """
+        earlier = []
+        for run_dir in runs.every(self.checkout.root):
+            if run_dir == self.run_dir:
+                continue
+            try:
+                record = RunRecord.load(run_dir)
+            except (OSError, ValueError):
+                continue
+            if record.spec == self.spec and record.branch == self.branch:
+                earlier.append(record)
+        return earlier + [self.record]
 
     def _rounds(self) -> None:
         """Implements the frontier, then reviews, until a review round finds nothing or nothing is left to review.

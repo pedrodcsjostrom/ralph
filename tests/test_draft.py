@@ -11,9 +11,13 @@ def finding(title):
     return {"title": title, "what_to_build": "Equal widgets keep their order.", "acceptance_criteria": ["Stable"]}
 
 
-def read_draft(s):
-    [run] = s.run_dirs()
-    with open(os.path.join(run, "pull-request.md")) as f:
+def read_draft(s, run=None):
+    """The draft of the only run, or of the run at index run among the run directories, oldest first."""
+    if run is None:
+        [path] = s.run_dirs()
+    else:
+        path = s.run_dirs()[run]
+    with open(os.path.join(path, "pull-request.md")) as f:
         return f.read()
 
 
@@ -228,6 +232,64 @@ class AStoppedRun(ScenarioTestCase):
 
         self.assertEqual(result.status, 1, result.output)
         self.assertIn("- #3 Sort is unstable, a fix ticket from review round 1: open, not attempted\n", read_draft(s))
+
+
+class ARerun(ScenarioTestCase):
+    def test_writes_a_draft_of_the_whole_spec_on_the_branch_with_the_latest_ending(self):
+        s = self.scenario()
+        s.ticket(2, title="Sort widgets")
+        s.review_finds(1, finding("Sort is unstable"))
+        s.agent_does(3, "blocked", "complete")
+        first = s.ralph("run", "1", RALPH_MAX_ATTEMPTS="1")
+        self.assertEqual(first.status, 1, first.output)
+        s.review_finds(1)
+
+        second = s.ralph("run", "1")
+
+        self.assertEqual(second.status, 0, second.output)
+        two, fix = short_shas(s, "main..HEAD")
+        base = s.git("rev-parse", "--short=9", "main")
+        latest = read_draft(s, -1)
+        self.assertEqual(
+            latest,
+            f"Implements spec #1 on `spec/1-spec-widget-sorting`, from base `{base}`.\n"
+            "\n"
+            "## How the run ended\n"
+            "\n"
+            "Ended cleanly: every ticket is closed and nothing is left unreviewed.\n"
+            "\n"
+            "## Tickets\n"
+            "\n"
+            "- #2 Sort widgets: closed after 1 attempt\n"
+            f"  - `{two}` Implement ticket (#2)\n"
+            "- #3 Sort is unstable, a fix ticket from review round 1: closed after 2 attempts\n"
+            f"  - `{fix}` Implement ticket (#3)\n"
+            "\n"
+            "## Review rounds\n"
+            "\n"
+            f"- Round 1, since `{base}`: fix tickets #3\n"
+            f"- Round 2, since `{base}`: found nothing\n",
+        )
+        s.add_remote()
+        published = s.ralph("publish")
+        self.assertEqual(published.status, 0, published.output)
+        self.assertEqual(s.pull_requests()[0]["body"], latest)
+
+    def test_leaves_out_runs_on_another_integration_branch(self):
+        s = self.scenario()
+        s.ticket(2, title="Sort widgets")
+        s.ticket(3, title="Sort by colour")
+        s.agent_does(3, "blocked", "complete")
+        first = s.ralph("run", "1", RALPH_MAX_ATTEMPTS="1")
+        self.assertEqual(first.status, 1, first.output)
+        s.git("switch", "-q", "-c", "widgets-by-colour", "main")
+
+        second = s.ralph("run", "1")
+
+        self.assertEqual(second.status, 0, second.output)
+        latest = read_draft(s, -1)
+        self.assertIn("## Tickets\n\n- #3 Sort by colour: closed after 1 attempt\n", latest)
+        self.assertNotIn("#2", latest)
 
 
 if __name__ == "__main__":

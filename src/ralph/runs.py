@@ -43,10 +43,16 @@ def _started(name: str) -> tuple[str, int]:
     return found.group(1), int(found.group(2) or 1)
 
 
-def latest(project_root: str) -> Optional[str]:
-    """The directory of the run started last, or None when the project has had no run."""
+def every(project_root: str) -> list[str]:
+    """The directories of the project's runs, in the order they started."""
     runs = os.path.join(project_root, RUNS)
     if not os.path.isdir(runs):
-        return None
+        return []
     names = [n for n in os.listdir(runs) if _NAME.fullmatch(n) and os.path.isdir(os.path.join(runs, n))]
-    return os.path.join(runs, max(names, key=_started)) if names else None
+    return [os.path.join(runs, name) for name in sorted(names, key=_started)]
+
+
+def latest(project_root: str) -> Optional[str]:
+    """The directory of the run started last, or None when the project has had no run."""
+    found = every(project_root)
+    return found[-1] if found else None
