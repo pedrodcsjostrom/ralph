@@ -10,7 +10,7 @@ from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
 from ralph.console import Console
-from ralph.errors import RalphError
+from ralph.errors import RalphError, Reported
 from ralph.loop import Loop
 from ralph.tracker import Tracker
 
@@ -102,6 +102,8 @@ def main(argv: list[str], console: Optional[Console] = None) -> int:
     args = _parser().parse_args(argv)
     try:
         return args.handler(args, console)
+    except Reported as e:
+        return e.status
     except RalphError as e:
         console.error(str(e))
         return 1
