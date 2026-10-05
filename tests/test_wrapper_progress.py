@@ -1,99 +1,116 @@
-"""The wrapper's indicator is a copy of src/ralph/progress.py, since the wrapper cannot import ralph.
+"""The wrapper's indicator looks like ralph's: a runner sees one kind of working indicator.
 
-These keep the copy in step: driven the same way, both write the same bytes.
+The wrapper must stay a single standalone file, so it carries its own copy of
+ralph's indicator. These tests run both as a runner does, the wrapper fetching
+a slow version and ralph waiting on a quiet agent, on a plain output and on a
+terminal, and compare the shape of what each writes.
 """
 
-import io
 import os
-import time
+import re
+import shutil
+import tempfile
 import unittest
-from importlib.machinery import SourceFileLoader
-from importlib.util import module_from_spec, spec_from_loader
-from unittest import mock
 
-from ralph import progress
+from tests.harness import ScenarioTestCase
+from tests.test_wrapper import WrapperWorld
 
-WRAPPER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wrapper", "ralph")
-_loader = SourceFileLoader("ralph_wrapper", WRAPPER)
-wrapper = module_from_spec(spec_from_loader(_loader.name, _loader))
-_loader.exec_module(wrapper)
+# What each waits on, as its indicator names it.
+FETCH = "fetching ralph v1"
+ITERATION = "iteration 1/30, ticket #2, attempt 1/2"
 
-
-class Stream(io.StringIO):
-    def __init__(self, encoding="utf-8"):
-        super().__init__()
-        self._encoding = encoding
-
-    @property
-    def encoding(self):
-        return self._encoding
+ELAPSED = re.compile(r"\b(\d+h)?(\d+m)?\d+s\b")
+ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+# What the indicator draws on a terminal: erase the line, then the frame, then back to column 0.
+FRAME = re.compile(r"\x1b\[2K([^\r\n\x1b]+)\r")
+SPINNERS = {"unicode": set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"), "ascii": set("|/-\\")}
 
 
-class Clock:
-    def __init__(self):
-        self.now = 1000.0
-
-    def __call__(self):
-        return self.now
-
-
-def drive(module, stream, terminal, clock, interval=1000.0):
-    """One fetch-like wait: two steps, the second after a while, then the end of the wait."""
-    p = module.Progress(stream, interval, terminal=terminal, clock=clock)
-    with p.waiting("fetching ralph v1") as wait:
-        wait.doing("git ls-remote")
-        clock.now += 65
-        wait.doing("git\tfetch\n" + "x" * 100)
-        line = p.line()
-    return line, stream.getvalue()
+def shape(text, label):
+    """text, an indicator's line, with what differs between two indicators taken out: the label, the elapsed time
+    and what is happening now."""
+    text = ELAPSED.sub("<elapsed>", text.replace(label, "<label>"))
+    return re.sub(r"<elapsed>, .+$", "<elapsed>, <activity>", text)
 
 
-class TheWrappersIndicator(unittest.TestCase):
-    def test_draws_and_erases_on_a_terminal_exactly_as_ralph_does(self):
-        for encoding in ("utf-8", "ascii"):
+def plain_shapes(output, label):
+    return sorted({shape(line, label) for line in output.splitlines() if line.startswith("ralph: working: ")})
+
+
+def terminal_shape(raw, label):
+    """The control sequences the output uses, the spinner it draws, and its frames that name label."""
+    frames = [frame for frame in FRAME.findall(raw) if label in frame]
+    spinner = {frame[0] for frame in frames}
+    alphabet = next((name for name, chars in SPINNERS.items() if spinner <= chars), f"unknown {spinner}")
+    shapes = sorted({"<spinner>" + shape(frame[1:], label) for frame in frames})
+    return sorted(set(ESCAPE.findall(raw))), alphabet, shapes
+
+
+class TheWrappersIndicator(ScenarioTestCase):
+    def world(self):
+        root = tempfile.mkdtemp(prefix="ralph-wrapper-test-")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        w = WrapperWorld(os.path.realpath(root))
+        w.release("v1")
+        w.pin("v1")
+        return w
+
+    def quiet_run(self):
+        """A scenario whose only ticket's agent goes quiet for a while in the middle of a tool call."""
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_pauses(1.0)
+        return s
+
+    def test_writes_progress_lines_of_the_same_shape_as_ralph_when_output_is_not_a_terminal(self):
+        fetch = self.world().wrapper(SLOW_GIT="0.5", RALPH_PROGRESS_INTERVAL="0.2")
+        run = self.quiet_run().ralph("run", "1", RALPH_PROGRESS_INTERVAL="0.2")
+
+        self.assertEqual(fetch.status, 0, fetch.output)
+        self.assertEqual(run.status, 0, run.output)
+        expected = ["ralph: working: <label>, <elapsed>, <activity>"]
+        self.assertEqual(plain_shapes(fetch.output, FETCH), expected, fetch.output)
+        self.assertEqual([s for s in plain_shapes(run.output, ITERATION) if "<label>" in s], expected, run.output)
+
+    def test_draws_and_erases_its_indicator_on_a_terminal_as_ralph_does(self):
+        for encoding, alphabet in (("utf-8", "unicode"), ("ascii", "ascii")):
             with self.subTest(encoding=encoding):
-                outputs = []
-                for module in (progress, wrapper):
-                    with mock.patch.object(module, "FRAME", 1000.0):
-                        outputs.append(drive(module, Stream(encoding), True, Clock()))
-                self.assertEqual(outputs[1], outputs[0])
-                self.assertIn("\x1b[?25l", outputs[0][1])
+                fetch = self.world().wrapper_on_terminal(SLOW_GIT="0.6", PYTHONIOENCODING=encoding)
+                run = self.quiet_run().ralph_on_terminal("run", "1", columns=200, PYTHONIOENCODING=encoding)
 
-    def test_writes_the_same_plain_lines_as_ralph_when_output_is_not_a_terminal(self):
-        outputs = []
-        for module in (progress, wrapper):
-            stream, clock = Stream(), Clock()
-            p = module.Progress(stream, 0.05, terminal=False, clock=clock)
-            with p.waiting("fetching ralph v1") as wait:
-                wait.doing("git fetch")
-                clock.now += 7
-                deadline = time.monotonic() + 5
-                while "\n" not in stream.getvalue() and time.monotonic() < deadline:
-                    time.sleep(0.01)
-            outputs.append(stream.getvalue().splitlines()[0])
-        self.assertEqual(outputs[1], outputs[0])
-        self.assertEqual(outputs[0], "ralph: working: fetching ralph v1, 7s, git fetch")
+                self.assertEqual(fetch.status, 0, fetch)
+                self.assertEqual(run.status, 0, run)
+                wrapper_shape = terminal_shape(fetch.raw, FETCH)
+                self.assertEqual(wrapper_shape, terminal_shape(run.raw, ITERATION))
+                self.assertEqual(
+                    wrapper_shape,
+                    (["\x1b[2K", "\x1b[?25h", "\x1b[?25l"], alphabet, ["<spinner> <label>, <elapsed>, <activity>"]),
+                )
+                for result, label in ((fetch, FETCH), (run, ITERATION)):
+                    self.assertEqual([line for line in result.screen.lines() if label in line], [], result)
+                    self.assertTrue(result.screen.cursor_visible, result)
 
-    def test_shares_ralphs_timings_and_text_helpers(self):
-        for name in ("INTERVAL", "INTERVAL_VARIABLE", "FRAME", "SPINNER", "ASCII_SPINNER", "ERASE", "ACTIVITY_WIDTH"):
-            self.assertEqual(getattr(wrapper, name), getattr(progress, name), name)
-        for seconds in (0, 7.9, 65, 3600 * 2 + 180):
-            self.assertEqual(wrapper.duration(seconds), progress.duration(seconds))
-        for text, columns in (("short", 10), ("a longer line than fits", 10), ("中文字符", 5), ("", 2)):
-            self.assertEqual(wrapper.fit(text, columns), progress.fit(text, columns))
-        self.assertEqual(wrapper.one_line("a\x1b[2K\nb " + "c" * 90), progress.one_line("a\x1b[2K\nb " + "c" * 90))
+    def test_cuts_its_indicator_to_a_narrow_terminal_as_ralph_does(self):
+        columns = 24
+        fetch = self.world().wrapper_on_terminal(SLOW_GIT="0.6", columns=columns)
+        run = self.quiet_run().ralph_on_terminal("run", "1", columns=columns)
 
-    def test_reads_the_interval_as_ralph_does(self):
-        for value in ("", "0.5", " 2 "):
-            env = {"RALPH_PROGRESS_INTERVAL": value}
-            self.assertEqual(wrapper.interval(env), progress.interval(env))
-        for value in ("soon", "0", "-1", "inf", "nan"):
-            env = {"RALPH_PROGRESS_INTERVAL": value}
-            with self.assertRaises(ValueError) as expected:
-                progress.interval(env)
-            with self.assertRaises(wrapper.Failure) as got:
-                wrapper.interval(env)
-            self.assertEqual(str(got.exception), str(expected.exception))
+        for result, label in ((fetch, FETCH), (run, ITERATION)):
+            self.assertEqual(result.status, 0, result)
+            frames = [frame for frame in FRAME.findall(result.raw) if label[: columns // 2] in frame]
+            self.assertTrue(frames, result)
+            # One cell short of the margin, so the terminal never wraps it.
+            self.assertEqual({len(frame) for frame in frames}, {columns - 1}, frames)
+
+    def test_refuses_an_unusable_progress_interval_in_the_same_words_as_ralph(self):
+        fetch = self.world().wrapper(RALPH_PROGRESS_INTERVAL="soon")
+        run = self.quiet_run().ralph("run", "1", RALPH_PROGRESS_INTERVAL="soon")
+
+        self.assertEqual((fetch.status, run.status), (1, 1))
+        self.assertEqual(fetch.output, run.output)
+        self.assertEqual(
+            fetch.output, "ralph: RALPH_PROGRESS_INTERVAL must be a number of seconds above 0, not 'soon'\n"
+        )
 
 
 if __name__ == "__main__":

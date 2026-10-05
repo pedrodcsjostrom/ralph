@@ -118,12 +118,13 @@ class WrapperWorld:
         )
         return Result(proc.returncode, proc.stdout)
 
-    def wrapper_on_terminal(self, *args, interrupt_when=None, **env):
+    def wrapper_on_terminal(self, *args, columns=terminal.COLUMNS, interrupt_when=None, **env):
         """Runs the wrapper on a pseudo-terminal (see tests/terminal.py), typing Ctrl-C once interrupt_when shows."""
         return terminal.run(
             [sys.executable, os.path.join(self.project, "ralph"), *args],
             cwd=self.project,
             env=self.env(TERM="xterm-256color", LANG="C.UTF-8", **env),
+            columns=columns,
             interrupt_when=interrupt_when,
         )
 
