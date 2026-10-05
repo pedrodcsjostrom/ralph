@@ -137,6 +137,12 @@ class Scenario:
         agent["behaviours"][str(ticket)] = list(behaviours)
         self._write_state("agent", agent)
 
+    def agent_pauses(self, seconds):
+        """Makes every headless run go silent for seconds in the middle of a tool call."""
+        agent = self._read_state("agent")
+        agent["pause"] = seconds
+        self._write_state("agent", agent)
+
     def review_finds(self, round_, *findings):
         """What review round round_ writes to its findings file: dicts with title, what_to_build and so on."""
         self.review_writes(round_, json.dumps(list(findings)))

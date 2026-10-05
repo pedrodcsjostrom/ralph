@@ -5,7 +5,7 @@ import os
 import sys
 from typing import Optional
 
-from ralph import agent, checkout, pin, skill_sync, tracker
+from ralph import agent, checkout, pin, progress, skill_sync, tracker
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
@@ -70,7 +70,7 @@ def _run(args: argparse.Namespace, console: Console) -> int:
     config = Config.from_env(os.environ)
     require_tools()
     repo = Checkout.at(os.getcwd())
-    Loop(args.spec, Tracker(repo.root), Agent(repo.root), repo, console, config).run()
+    Loop(args.spec, Tracker(repo.root, console.progress), Agent(repo.root), repo, console, config).run()
     return 0
 
 
@@ -101,6 +101,10 @@ def main(argv: list[str], console: Optional[Console] = None) -> int:
     console = console or Console()
     args = _parser().parse_args(argv)
     try:
+        try:
+            console.progress.interval = progress.interval(os.environ)
+        except ValueError as e:
+            raise RalphError(str(e)) from None
         return args.handler(args, console)
     except RalphError as e:
         console.error(str(e))

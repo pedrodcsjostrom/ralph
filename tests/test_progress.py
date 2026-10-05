@@ -1,0 +1,43 @@
+"""The working indicator: a runner can tell a quiet run from a hung one."""
+
+import re
+import unittest
+
+from tests.harness import ScenarioTestCase
+
+# Anything a log file should never hold: escape sequences, carriage returns and other control characters.
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def progress_lines(output):
+    return [line for line in output.splitlines() if line.startswith("ralph: working: ")]
+
+
+class PlainProgress(ScenarioTestCase):
+    def test_a_quiet_iteration_writes_plain_progress_lines_naming_where_the_run_is_and_what_the_agent_does(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.agent_pauses(1.0)
+
+        result = s.ralph("run", "1", RALPH_PROGRESS_INTERVAL="0.2")
+
+        self.assertEqual(result.status, 0, result.output)
+        lines = progress_lines(result.output)
+        self.assertGreaterEqual(len(lines), 3, result.output)
+        self.assertRegex(
+            lines[-1], r"^ralph: working: iteration 1/30, ticket #2, attempt 1/2, \ds, Bash: Run the tests$"
+        )
+        self.assertIsNone(CONTROL.search(result.output), repr(result.output))
+
+    def test_a_quick_wait_writes_no_progress(self):
+        s = self.scenario()
+        s.ticket(2)
+
+        result = s.ralph("run", "1")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertEqual(progress_lines(result.output), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

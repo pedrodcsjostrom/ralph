@@ -14,6 +14,9 @@ invocation, with its arguments and prompt, is appended to
 To add a behaviour, add a function to BEHAVIOURS. It receives the ticket number
 and returns the promise to end the final message with, or None for no promise.
 
+"pause" (seconds, default 0) is how long a headless run stays silent after
+announcing its tool call, as a real agent does while a long command runs.
+
 A review (a prompt with a "- Findings file:" line instead of a ticket) acts on
 the entry for its round in "reviews":
 
@@ -27,8 +30,10 @@ misbehaviour from REVIEW_MISBEHAVIOURS.
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import time
 
 FAKE = os.environ["RALPH_FAKE"]
 STATE = os.path.join(FAKE, "agent.json")
@@ -202,9 +207,21 @@ def headless(state, args, call):
     emit(
         {
             "type": "assistant",
-            "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "make test"}}]},
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_fake",
+                        "name": "Bash",
+                        "input": {"command": "make test", "description": "Run the tests"},
+                    }
+                ]
+            },
         }
     )
+    # A long tool call: the agent emits nothing while it lasts.
+    time.sleep(state.get("pause", 0))
+    emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_fake"}]}})
     final = f"Fake agent finished ticket #{ticket}."
     if promise:
         final += f" <promise>{promise}</promise>"
@@ -220,6 +237,8 @@ def auth_status(state, args, call):
 
 
 def main(args):
+    # Interrupted, it stops quietly, as the real CLI does.
+    signal.signal(signal.SIGINT, lambda *_: sys.exit(130))
     call = {"tool": "claude", "args": args}
     try:
         state = load()
