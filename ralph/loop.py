@@ -91,6 +91,7 @@ class Loop:
             self._implement_frontier()
             head = self.checkout.head()
             if head == self.fixed_point:
+                self.console.say(f"nothing to review since {self.fixed_point[:9]}")
                 return
             if round_ >= self.config.max_review_rounds:
                 raise RalphError(

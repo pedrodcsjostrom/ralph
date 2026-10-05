@@ -29,7 +29,7 @@ class Finding:
 
 
 class Unreadable(Exception):
-    """The findings file is missing or malformed. The message completes "the review ..."."""
+    """The findings file is missing or malformed. The message reads on from "review round <n> "."""
 
 
 class Malformed(Exception):
