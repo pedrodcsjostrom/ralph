@@ -23,6 +23,10 @@ class Console:
         """A piece of an agent's prose, as it streams."""
         self._write(self.out, text.rstrip("\n") + "\n\n")
 
+    def document(self, text: str) -> None:
+        """A whole document, such as the help, as it is."""
+        self._write(self.out, text)
+
     def error(self, message: str) -> None:
         self.out.flush()
         self._write(self.err, f"ralph: {message}\n")

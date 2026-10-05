@@ -52,24 +52,35 @@ def _flags(value: str) -> tuple[str, ...]:
         raise Malformed(f"must be flags as a shell would split them ({e})") from None
 
 
+# Every key, in the order `ralph help` documents them. A new key is added here and to Config.
 KEYS = (
-    Key("verify", "", "shell command that must pass before a ticket is closed; empty skips verification", _text),
-    Key("main_branch", "main", "the branch a run never commits to and takes its run base from", _text),
+    Key(
+        "verify",
+        "",
+        "A shell command, run at the project root, that must pass before a ticket is closed. None skips verification.",
+        _text,
+    ),
+    Key(
+        "main_branch",
+        "main",
+        "The branch a run never commits to. A run started on it creates the integration branch.",
+        _text,
+    ),
     Key(
         "run_base",
         "",
-        "the commit the first review compares against; empty means the merge base with main_branch",
+        "The commit the first review compares the work against. None means the merge base with main_branch.",
         _text,
     ),
-    Key("max_attempts", "2", "attempts per ticket before it is left alone for the rest of the run", _count),
-    Key("max_review_rounds", "3", "review rounds per run before it stops as not converging", _count),
+    Key("max_attempts", "2", "Attempts per ticket before it is left alone for the rest of the run.", _count),
+    Key("max_review_rounds", "3", "Review rounds per run before it stops as not converging.", _count),
     Key(
         "max_iterations",
         "30",
-        "iterations per run, implementing or reviewing, before it stops as not converging",
+        "Iterations per run, implementing or reviewing, before it stops as not converging.",
         _count,
     ),
-    Key("agent_flags", "", "extra flags for every Claude Code launch, split as a shell would", _flags),
+    Key("agent_flags", "", "Extra flags for every Claude Code launch, split as a shell would.", _flags),
 )
 _BY_NAME = {key.name: key for key in KEYS}
 

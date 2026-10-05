@@ -1,5 +1,6 @@
 """The project's checked-in configuration and project rules, and the help command."""
 
+import re
 import unittest
 
 from tests.harness import ScenarioTestCase
@@ -203,6 +204,54 @@ class ProjectRules(ScenarioTestCase):
         self.assertEqual(result.status, 0, result.output)
         for prompt in s.prompts():
             self.assertNotIn("## Project rules", prompt)
+
+
+class Help(ScenarioTestCase):
+    def test_help_lists_every_command(self):
+        s = self.scenario()
+
+        result = s.ralph("help")
+
+        self.assertEqual(result.status, 0, result.output)
+        commands, maintainer = result.output.split("\nMaintainer commands\n")
+        for synopsis in ("ralph run <spec>", "ralph upgrade [<version>]", "ralph help"):
+            self.assertIn("\n  " + synopsis + "\n", commands)
+        self.assertIn("\n  ralph sync-skills [<skills-dir>]\n", maintainer)
+        self.assertIn("Moves the project's pin (.ralph/pin) to the newest released ralph version", commands)
+
+    def test_help_lists_every_configuration_key_with_its_environment_variable_and_default(self):
+        s = self.scenario()
+
+        result = s.ralph("help")
+
+        for key, env, default in (
+            ("verify", "RALPH_VERIFY", "(none)"),
+            ("main_branch", "RALPH_MAIN_BRANCH", "main"),
+            ("run_base", "RALPH_RUN_BASE", "(none)"),
+            ("max_attempts", "RALPH_MAX_ATTEMPTS", "2"),
+            ("max_review_rounds", "RALPH_MAX_REVIEW_ROUNDS", "3"),
+            ("max_iterations", "RALPH_MAX_ITERATIONS", "30"),
+            ("agent_flags", "RALPH_AGENT_FLAGS", "(none)"),
+        ):
+            with self.subTest(key=key):
+                self.assertRegex(result.output, rf"\n  {key} +{env} +{re.escape(default)}\n")
+
+    def test_help_names_the_project_files_and_the_environment(self):
+        s = self.scenario()
+
+        result = s.ralph("help")
+
+        for text in (".ralph/config", ".ralph/rules/implement.md", ".ralph/rules/review.md", "RALPH_REPOSITORY"):
+            self.assertIn(text, result.output)
+
+    def test_help_needs_no_project(self):
+        s = self.scenario()
+        s.remove_tool("git")
+
+        result = s.ralph("help")
+
+        self.assertEqual(result.status, 0, result.output)
+        self.assertIn("ralph run <spec>", result.output)
 
 
 if __name__ == "__main__":
