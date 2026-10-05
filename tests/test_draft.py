@@ -1,5 +1,6 @@
 """The pull request draft: every run, clean or not, leaves one in its run directory, assembled from what it recorded."""
 
+import json
 import os
 import unittest
 
@@ -178,6 +179,32 @@ class AStoppedRun(ScenarioTestCase):
         [run] = s.run_dirs()
         self.assertTrue(
             result.output.endswith(f"ralph: interrupted\nralph: the pull request draft is {run}/pull-request.md\n"),
+            result.output,
+        )
+
+    def test_an_unexpected_error_writes_a_draft_too_and_says_where_its_traceback_is(self):
+        s = self.scenario()
+        s.ticket(2)
+        s.ticket(3)
+        s.tracker_misshapes(3)
+
+        result = s.ralph("run", "1")
+
+        self.assertEqual(result.status, 1, result.output)
+        [run] = s.run_dirs()
+        text = read_draft(s)
+        self.assertIn("Stopped by an unexpected error in ralph:\n\n```text\nKeyError: 'number'\n```\n", text)
+        self.assertIn("- #2 Ticket 2: closed after 1 attempt\n", text)
+        with open(os.path.join(run, "run.json")) as f:
+            record = json.load(f)
+        self.assertEqual((record["outcome"], record["reason"]), ("error", "KeyError: 'number'"))
+        with open(os.path.join(run, "error.txt")) as f:
+            self.assertIn("Traceback (most recent call last):", f.read())
+        self.assertTrue(
+            result.output.endswith(
+                f"ralph: unexpected error, a bug in ralph: KeyError: 'number'; its traceback is in {run}/error.txt\n"
+                f"ralph: the pull request draft is {run}/pull-request.md\n"
+            ),
             result.output,
         )
 

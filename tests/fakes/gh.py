@@ -104,6 +104,9 @@ def repo_view(state, args):
 def issue_view(state, args):
     number = int(args[2])
     found = issue(state, number)
+    if found.get("misshapen"):
+        print("{}")
+        return
     data = {
         "number": number,
         "title": found["title"],

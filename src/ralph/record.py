@@ -27,6 +27,8 @@ class RunOutcome:
 
     COMPLETE = "complete"
     STOPPED = "stopped"
+    # Stopped by an unexpected error: a bug in ralph, or a tool answering in a way ralph does not understand.
+    ERROR = "error"
 
 
 @dataclass

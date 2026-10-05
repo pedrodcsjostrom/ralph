@@ -124,6 +124,12 @@ class Scenario:
         tracker["issues"][str(SPEC)]["sub_issues"].append(number)
         self._write_state("tracker", tracker)
 
+    def tracker_misshapes(self, number):
+        """Makes the tracker answer with an empty object when asked about issue number, as if GitHub changed shape."""
+        tracker = self._read_state("tracker")
+        tracker["issues"][str(number)]["misshapen"] = True
+        self._write_state("tracker", tracker)
+
     def tracker_logged_in(self, logged_in):
         tracker = self._read_state("tracker")
         tracker["logged_in"] = logged_in

@@ -9,7 +9,7 @@ import os
 from collections.abc import Iterable
 
 from ralph.checkout import Commit
-from ralph.record import RunRecord, TicketOutcome, TicketRecord
+from ralph.record import RunOutcome, RunRecord, TicketOutcome, TicketRecord
 
 FILE = "pull-request.md"
 
@@ -61,6 +61,8 @@ class _Draft:
         if self.record.ended_cleanly:
             return "Ended cleanly: every ticket is closed and nothing is left unreviewed."
         fence = "```"
+        if self.record.outcome == RunOutcome.ERROR:
+            return f"Stopped by an unexpected error in ralph:\n\n{fence}text\n{self.record.reason}\n{fence}"
         return f"Stopped before it could end cleanly:\n\n{fence}text\n{self.record.reason}\n{fence}"
 
     def ticket(self, t: TicketRecord) -> str:

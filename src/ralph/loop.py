@@ -8,6 +8,7 @@ needs is read from the tracker and the integration branch.
 
 import os
 import re
+import traceback
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional
@@ -20,6 +21,9 @@ from ralph.console import Console
 from ralph.errors import AlreadyReported, RalphError
 from ralph.record import ReviewRoundRecord, RunOutcome, RunRecord, TicketOutcome
 from ralph.tracker import READY, Ticket, Tracker
+
+# Where a run that stopped on an unexpected error keeps its traceback, in the run directory.
+ERROR_FILE = "error.txt"
 
 # How an agent ends its final message on a ticket.
 PROMISE_COMPLETE = "<promise>TICKET COMPLETE</promise>"
@@ -175,6 +179,15 @@ class _Run:
             self.console.error("interrupted")
             self._end(RunOutcome.STOPPED, "interrupted")
             raise AlreadyReported(130) from None
+        except Exception as e:
+            # A bug in ralph or a surprise from a tool it drives: the run still leaves its record and draft.
+            reason = f"{type(e).__name__}: {e}"
+            path = os.path.join(self.run_dir, ERROR_FILE)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(traceback.format_exc())
+            self.console.error(f"unexpected error, a bug in ralph: {reason}; its traceback is in {path}")
+            self._end(RunOutcome.ERROR, reason)
+            raise AlreadyReported(1) from e
         self.console.say(
             f"complete after {self.iteration} iterations. "
             f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
