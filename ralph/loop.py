@@ -11,12 +11,12 @@ import re
 from collections.abc import Iterable
 from typing import Optional
 
-from ralph import findings, project, prompts, runs, verify
+from ralph import draft, findings, project, prompts, runs, verify
 from ralph.agent import Agent
 from ralph.checkout import Checkout
 from ralph.config import Config
 from ralph.console import Console
-from ralph.errors import RalphError
+from ralph.errors import RalphError, Reported
 from ralph.record import ReviewRoundRecord, RunRecord
 from ralph.tracker import Ticket, Tracker
 
@@ -68,17 +68,28 @@ class Loop:
         try:
             self._rounds()
         except RalphError as e:
-            self.record.outcome, self.record.reason = "stopped", str(e)
-            self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
-            self.record.save(self.run_dir)
-            raise
-        self.record.outcome = "complete"
-        self.record.save(self.run_dir)
+            self.console.error(str(e))
+            self._end("stopped", str(e))
+            raise Reported(1) from None
+        except KeyboardInterrupt:
+            self.console.error("interrupted")
+            self._end("stopped", "interrupted")
+            raise Reported(130) from None
         self.console.say(
             f"complete after {self.iteration} iterations. "
             f"Spec #{self.spec} is implemented and reviewed on {self.branch} (base {self.base[:9]})."
         )
         self.console.say("nothing was pushed. Look it over, then open the pull request.")
+        self._end("complete")
+
+    def _end(self, outcome: str, reason: Optional[str] = None) -> None:
+        """Records how the run ended and leaves the pull request draft, then points the runner at it."""
+        self.record.outcome, self.record.reason = outcome, reason
+        if outcome != "complete":
+            self.record.unreviewed = [c.sha for c in reversed(self.checkout.commits(self.fixed_point))]
+        self.record.save(self.run_dir)
+        path = draft.write(self.run_dir, self.record, self.checkout.commits(self.base))
+        self.console.say(f"the pull request draft is {path}")
 
     def watch(self) -> None:
         """Opens an interactive session on the ticket an unattended run would implement next, and closes nothing.
@@ -277,6 +288,8 @@ class Loop:
             self.record.ticket(n, finding.title, from_review_round=round_)
             self.record.save(self.run_dir)
             self.console.say(f"review finding is now #{n}: {finding.title}")
+        record.finished = True
+        self.record.save(self.run_dir)
         return record.fix_tickets
 
     def _check_checkout(self, culprit: str) -> None:
