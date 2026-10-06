@@ -111,7 +111,7 @@ uvx ruff check . && uvx ruff format --check .    # lint, as CI runs it
 
 Ralph's own repository is a project, set up with ralph, and the place the tool is proven.
 Its `.ralph/config` sets `verify = python3 -m unittest`.
-Its pin is `v0.1.0`, the first release, which is not published yet: `./ralph` in this repository fails until the `v0.1.0` tag is pushed to the public repository.
+Its pin is `v0.1.0`, the first release.
 
 ### Bundled skills
 
@@ -136,3 +136,8 @@ git tag v0.2.0 && git push origin v0.2.0
 
 Projects move to it with `./ralph upgrade`, ralph's own repository included.
 A pushed tag must never move, because projects already pinned to it would silently run different code.
+
+## License
+
+Ralph is released under the MIT license; see [LICENSE](./LICENSE).
+The bundled skills in `plugin/` carry their own upstream MIT notice in `plugin/LICENSE`.
